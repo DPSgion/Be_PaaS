@@ -4,7 +4,7 @@ import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.user.dto.AddNewUser;
 import com.be_paas.modules.user.dto.UserResponse;
 import com.be_paas.modules.user.dto.UserUpdateRequest;
-import org.springframework.security.core.userdetails.UserDetails;
+import com.be_paas.modules.user.entity.UserStatus;
 
 public interface UserService {
 
@@ -14,7 +14,7 @@ public interface UserService {
 
     UserResponse update(UserUpdateRequest updateRequest);
 
-    public UserDetails loadUserByUsername(String username);
+    UserResponse changeStatus(int targetUserId, UserStatus newStatus, String reason);
 
 
 }

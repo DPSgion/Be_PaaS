@@ -9,10 +9,8 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -46,9 +44,9 @@ public class JwtFilter extends OncePerRequestFilter {
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 User userFromDb = userRepository.findByUsername(username).orElse(null);
 
-                // CHỈ SET QUYỀN KHI MỌI THỨ HỢP LỆ (Bỏ qua nếu bị Ban hoặc sai Version)
+
                 if (userFromDb != null &&
-                        userFromDb.getStatus() != com.be_paas.modules.user.entity.UserStatus.BANNED &&
+                        userFromDb.getStatus() != UserStatus.BANNED &&
                         tokenVersionFromJwt != null &&
                         tokenVersionFromJwt.equals(userFromDb.getTokenVersion())) {
 
@@ -68,9 +66,6 @@ public class JwtFilter extends OncePerRequestFilter {
             }
         }
 
-        // LUÔN LUÔN CHO REQUEST ĐI TIẾP!
-        // Nếu token sai/bị ban -> SecurityContext trống rỗng.
-        // Spring Security sẽ tự cho phép nếu gọi /auth/login, và tự ném lỗi nếu gọi /users!
         filterChain.doFilter(request, response);
     }
 

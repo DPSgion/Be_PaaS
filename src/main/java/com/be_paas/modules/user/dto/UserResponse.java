@@ -9,7 +9,7 @@ public record UserResponse(
         int id,
         String email,
         String username,
-        String fullname,
+        String fullName,
         String avatarUrl,
         String githubUsername,
         Role role,

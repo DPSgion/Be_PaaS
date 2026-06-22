@@ -1,6 +1,5 @@
 package com.be_paas.core.security;
 
-import com.be_paas.modules.user.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;

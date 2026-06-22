@@ -7,21 +7,18 @@ import com.be_paas.modules.user.dto.UserResponse;
 import com.be_paas.modules.user.dto.UserUpdateRequest;
 import com.be_paas.modules.user.entity.Role;
 import com.be_paas.modules.user.entity.User;
+import com.be_paas.modules.user.entity.UserStatus;
 import com.be_paas.modules.user.mapper.UserMapper;
 import com.be_paas.modules.user.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 @Service
-public class UserServiceImpl implements UserService, org.springframework.security.core.userdetails.UserDetailsService {
+public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final UserMapper userMapper;
@@ -76,7 +73,17 @@ public class UserServiceImpl implements UserService, org.springframework.securit
 
         user.setAvatarUrl(avatarInput);
 
-        user.setRole(Role.DEVELOPER);
+        boolean isSystemAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SYSTEM_ADMIN"));
+
+        if (isSystemAdmin) {
+            user.setRole(createRequest.role());
+        } else {
+            if (createRequest.role() == Role.ADMIN || createRequest.role() == Role.SYSTEM_ADMIN){
+                throw new BusinessException(403, "You can't do that ! Just SYSTEM ADMIN can do it");
+            }
+            user.setRole(Role.DEVELOPER);
+        }
 
         String hashedPassword = passwordEncoder.encode(createRequest.password());
 
@@ -94,16 +101,48 @@ public class UserServiceImpl implements UserService, org.springframework.securit
     }
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+    public UserResponse changeStatus(int targetUserId, UserStatus newStatus, String reason) {
 
-        return new org.springframework.security.core.userdetails.User(
-                user.getUsername(),
-                user.getPassword(),
-                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()))
-        );
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        // 1. Người thực hiện hành động (Admin/System Admin)
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new BusinessException(401, "Không xác định được danh tính người thao tác"));
+
+        // 2. Người bị thao tác (Nạn nhân)
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng có ID: " + targetUserId));
+
+        // 3. RÀO CHẶN 1: Chống Tự khóa chính mình
+        if (currentUser.getId() == targetUser.getId()) {
+            throw new BusinessException(400, "Bạn không thể tự khóa hoặc mở khóa tài khoản của chính mình!");
+        }
+
+        // 4. RÀO CHẶN 2: Chống lạm quyền (ADMIN không được ban ADMIN khác hoặc SYSTEM_ADMIN)
+        if (currentUser.getRole() == Role.ADMIN) {
+            if (targetUser.getRole() == Role.SYSTEM_ADMIN || targetUser.getRole() == Role.ADMIN) {
+                throw new BusinessException(403, "Bạn không đủ thẩm quyền để thao tác lên tài khoản cấp ngang hoặc cao hơn!");
+            }
+        }
+        if (targetUser.getRole() == Role.SYSTEM_ADMIN) {
+            throw new BusinessException(403, "Không thể thao tác lên tài khoản System Admin!");
+        }
+
+        // 5. RÀO CHẶN 3: Tránh update trùng trạng thái cũ
+        if (targetUser.getStatus() == newStatus) {
+            throw new BusinessException(400, "Tài khoản này hiện đã ở trạng thái " + newStatus.name());
+        }
+
+        // 6. CẬP NHẬT TRẠNG THÁI VÀ TĂNG VERSION TOKEN
+        targetUser.setStatus(newStatus);
+        targetUser.setBanReason(newStatus == UserStatus.BANNED ? reason : null);
+        targetUser.setTokenVersion(targetUser.getTokenVersion() + 1);
+
+
+        return userMapper.toResponse(userRepository.save(targetUser));
     }
+
+
 
 
 }

@@ -42,6 +42,9 @@ public class User {
     @Column(name = "trang_thai", length = 20, nullable = false)
     private UserStatus status;
 
+    @Column(name = "ly_do_chan", length = 500)
+    private String banReason;
+
     @Column(name = "thoi_gian_tao", updatable = false)
     private LocalDateTime createdAt;
 

@@ -7,9 +7,7 @@ import com.be_paas.modules.auth.dto.AuthRequest;
 import com.be_paas.modules.auth.dto.AuthResponse;
 import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.repository.UserRepository;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -43,7 +41,11 @@ public class AuthServiceImpl implements AuthService {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         User user = userRepository.findByUsername(authentication.getName())
-                .orElseThrow(() -> new BusinessException(404, "User not found"));
+                .orElseThrow(() -> new BusinessException(404, "Sai tài khoản hoặc mật khẩu"));
+
+        if (user.getStatus() == com.be_paas.modules.user.entity.UserStatus.BANNED) {
+            throw new BusinessException(403, "Tài khoản của bạn đã bị khóa! Không thể đăng nhập.");
+        }
 
         String token = jwtService.generateToken(authentication.getName(), user.getTokenVersion());
 
