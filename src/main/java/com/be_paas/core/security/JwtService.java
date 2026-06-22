@@ -1,5 +1,6 @@
 package com.be_paas.core.security;
 
+import com.be_paas.modules.user.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -23,13 +24,18 @@ public class JwtService {
         this.expiration = expiration;
     }
 
-    public String generateToken(String username) {
+    public String generateToken(String username, int tokenVersion) {
         return Jwts.builder()
                 .subject(username)
+                .claim("tokenVersion", tokenVersion)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + expiration))
                 .signWith(secretKey)
                 .compact();
+    }
+
+    public int extractTokenVersion(String token) {
+        return extractClaims(token).get("tokenVersion", Integer.class);
     }
 
     public String extractUsername(String token) {

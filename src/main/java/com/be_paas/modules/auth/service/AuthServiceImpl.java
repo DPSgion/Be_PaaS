@@ -1,5 +1,6 @@
 package com.be_paas.modules.auth.service;
 
+import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.security.CookieUtil;
 import com.be_paas.core.security.JwtService;
 import com.be_paas.modules.auth.dto.AuthRequest;
@@ -41,10 +42,10 @@ public class AuthServiceImpl implements AuthService {
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        String token = jwtService.generateToken(authentication.getName());
-
         User user = userRepository.findByUsername(authentication.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new BusinessException(404, "User not found"));
+
+        String token = jwtService.generateToken(authentication.getName(), user.getTokenVersion());
 
         cookieUtil.addTokenCookie(response, token); // ← dùng CookieUtil
 

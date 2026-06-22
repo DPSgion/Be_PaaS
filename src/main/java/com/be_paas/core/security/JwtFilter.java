@@ -1,11 +1,15 @@
 package com.be_paas.core.security;
 
+import com.be_paas.modules.user.entity.User;
+import com.be_paas.modules.user.entity.UserStatus;
+import com.be_paas.modules.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -15,16 +19,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
+    private final UserRepository userRepository;
 
-    public JwtFilter(JwtService jwtService, UserDetailsService userDetailsService) {
+    public JwtFilter(JwtService jwtService, UserRepository userRepository) {
         this.jwtService = jwtService;
-        this.userDetailsService = userDetailsService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -36,23 +41,36 @@ public class JwtFilter extends OncePerRequestFilter {
 
         if (token != null && jwtService.isTokenValid(token)) {
             String username = jwtService.extractUsername(token);
+            Integer tokenVersionFromJwt = jwtService.extractTokenVersion(token);
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                User userFromDb = userRepository.findByUsername(username).orElse(null);
 
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(
-                                userDetails, null, userDetails.getAuthorities()
-                        );
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+                // CHỈ SET QUYỀN KHI MỌI THỨ HỢP LỆ (Bỏ qua nếu bị Ban hoặc sai Version)
+                if (userFromDb != null &&
+                        userFromDb.getStatus() != com.be_paas.modules.user.entity.UserStatus.BANNED &&
+                        tokenVersionFromJwt != null &&
+                        tokenVersionFromJwt.equals(userFromDb.getTokenVersion())) {
+
+                    UserDetails userDetails = new org.springframework.security.core.userdetails.User(
+                            userFromDb.getUsername(),
+                            userFromDb.getPassword(),
+                            List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + userFromDb.getRole().name()))
+                    );
+
+                    UsernamePasswordAuthenticationToken authToken =
+                            new UsernamePasswordAuthenticationToken(
+                                    userDetails, null, userDetails.getAuthorities()
+                            );
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken); // <-- Cấp thẻ thông hành
+                }
             }
-        } else if (token != null) {
-            // Token có nhưng hết hạn hoặc bị sửa
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            return;
         }
 
+        // LUÔN LUÔN CHO REQUEST ĐI TIẾP!
+        // Nếu token sai/bị ban -> SecurityContext trống rỗng.
+        // Spring Security sẽ tự cho phép nếu gọi /auth/login, và tự ném lỗi nếu gọi /users!
         filterChain.doFilter(request, response);
     }
 

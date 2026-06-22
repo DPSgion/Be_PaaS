@@ -48,6 +48,9 @@ public class User {
     @Column(name = "da_xoa")
     private boolean isDeleted;
 
+    @Column(name = "phien_ban_token", nullable = false)
+    private int tokenVersion = 0;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
