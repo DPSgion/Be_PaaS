@@ -1,11 +1,7 @@
 package com.be_paas.modules.user.controller;
 
 import com.be_paas.core.response.PageResponse;
-import com.be_paas.modules.user.dto.AddNewUser;
-import com.be_paas.modules.user.dto.ChangeStatusRequest;
-import com.be_paas.modules.user.dto.UpdateRoleRequest;
-import com.be_paas.modules.user.dto.UserResponse;
-import com.be_paas.modules.user.entity.UserStatus;
+import com.be_paas.modules.user.dto.*;
 import com.be_paas.modules.user.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -14,12 +10,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/admin/users")
 @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
-public class UserController {
+public class UserManagementController {
     private final UserService userService;
 
-    public UserController(UserService userService) {
+    public UserManagementController(UserService userService) {
         this.userService = userService;
     }
 
@@ -54,5 +50,14 @@ public class UserController {
     ) {
         UserResponse updatedUser = userService.updateRole(id, request.role());
         return ResponseEntity.ok(updatedUser);
+    }
+
+    @PostMapping("/{id}/reset-password")
+    public ResponseEntity<ResetPasswordResponse> resetPassword(
+            @PathVariable int id,
+            @RequestBody ResetPasswordRequest request
+    ) {
+        ResetPasswordResponse response = userService.resetPassword(id, request);
+        return ResponseEntity.ok(response);
     }
 }

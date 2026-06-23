@@ -2,9 +2,7 @@ package com.be_paas.modules.user.service;
 
 import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
-import com.be_paas.modules.user.dto.AddNewUser;
-import com.be_paas.modules.user.dto.UserResponse;
-import com.be_paas.modules.user.dto.UserUpdateRequest;
+import com.be_paas.modules.user.dto.*;
 import com.be_paas.modules.user.entity.Role;
 import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.entity.UserStatus;
@@ -16,6 +14,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.security.SecureRandom;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -164,5 +164,54 @@ public class UserServiceImpl implements UserService {
         return userMapper.toResponse(userRepository.save(targetUser));
     }
 
+    @Override
+    public ResetPasswordResponse resetPassword(int targetUserId, ResetPasswordRequest request) {
+        // 1. Kiểm tra danh tính người thao tác
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new BusinessException(401, "Không xác định được danh tính người thao tác"));
 
+        // 2. Tìm nạn nhân
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng có ID: " + targetUserId));
+
+        // 3. RÀO CHẶN PHÂN CẤP: Chống lạm quyền
+        if (currentUser.getRole() == Role.ADMIN) {
+            if (targetUser.getRole() == Role.SYSTEM_ADMIN || targetUser.getRole() == Role.ADMIN) {
+                throw new BusinessException(403, "Bạn không đủ thẩm quyền để đổi mật khẩu của tài khoản cấp ngang hoặc cao hơn!");
+            }
+        }
+        if (targetUser.getRole() == Role.SYSTEM_ADMIN && currentUser.getId() != targetUser.getId()) {
+            throw new BusinessException(403, "Không thể can thiệp mật khẩu của tài khoản System Admin tối cao!");
+        }
+
+        // 4. XỬ LÝ MẬT KHẨU (Nếu trống thì tự sinh)
+        String rawPassword = request.password();
+        if (rawPassword == null || rawPassword.isBlank()) {
+            rawPassword = generateRandomPassword(); // Kích hoạt hàm sinh pass tự động dưới dòng dưới
+        }
+
+        // 5. MÃ HÓA, TĂNG VERSION TOKEN VÀ LƯU DB
+        targetUser.setPassword(passwordEncoder.encode(rawPassword));
+        targetUser.setTokenVersion(targetUser.getTokenVersion() + 1); // Đạp văng các phiên đăng nhập cũ
+        userRepository.save(targetUser);
+
+        // 6. Trả về thông tin kèm mật khẩu thô để hiển thị lên màn hình Admin
+        return new ResetPasswordResponse(targetUser.getUsername(), rawPassword);
+    }
+
+    private String generateRandomPassword() {
+        String CHAR_LOWER = "abcdefghijklmnopqrstuvwxyz";
+        String CHAR_UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        String NUMBER = "0123456789";
+        String PASSWORD_ALLOW_BASE = CHAR_LOWER + CHAR_UPPER + NUMBER;
+
+        SecureRandom random = new SecureRandom();
+        StringBuilder sb = new StringBuilder(8);
+        for (int i = 0; i < 8; i++) {
+            int rndCharAt = random.nextInt(PASSWORD_ALLOW_BASE.length());
+            sb.append(PASSWORD_ALLOW_BASE.charAt(rndCharAt));
+        }
+        return sb.toString();
+    }
 }
