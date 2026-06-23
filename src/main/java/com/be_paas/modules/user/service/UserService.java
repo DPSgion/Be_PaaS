@@ -4,6 +4,7 @@ import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.user.dto.AddNewUser;
 import com.be_paas.modules.user.dto.UserResponse;
 import com.be_paas.modules.user.dto.UserUpdateRequest;
+import com.be_paas.modules.user.entity.Role;
 import com.be_paas.modules.user.entity.UserStatus;
 
 public interface UserService {
@@ -16,5 +17,5 @@ public interface UserService {
 
     UserResponse changeStatus(int targetUserId, UserStatus newStatus, String reason);
 
-
+    UserResponse updateRole(int targetUserId, Role newRole);
 }

@@ -3,6 +3,7 @@ package com.be_paas.modules.user.controller;
 import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.user.dto.AddNewUser;
 import com.be_paas.modules.user.dto.ChangeStatusRequest;
+import com.be_paas.modules.user.dto.UpdateRoleRequest;
 import com.be_paas.modules.user.dto.UserResponse;
 import com.be_paas.modules.user.entity.UserStatus;
 import com.be_paas.modules.user.service.UserService;
@@ -42,6 +43,16 @@ public class UserController {
             @Valid @RequestBody ChangeStatusRequest request
     ) {
         UserResponse updatedUser = userService.changeStatus(id, request.status(), request.reason());
+        return ResponseEntity.ok(updatedUser);
+    }
+
+    @PatchMapping("/{id}/role")
+    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    public ResponseEntity<UserResponse> changeUserRole(
+            @PathVariable int id,
+            @Valid @RequestBody UpdateRoleRequest request
+    ) {
+        UserResponse updatedUser = userService.updateRole(id, request.role());
         return ResponseEntity.ok(updatedUser);
     }
 }

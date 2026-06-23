@@ -142,7 +142,27 @@ public class UserServiceImpl implements UserService {
         return userMapper.toResponse(userRepository.save(targetUser));
     }
 
+    @Override
+    public UserResponse updateRole(int targetUserId, Role newRole) {
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng có ID: " + targetUserId));
 
+        if (targetUser.getRole() == newRole) {
+            throw new BusinessException(400, "Người dùng này đã mang quyền " + newRole.name() + " rồi!");
+        }
+
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        User currentUser = userRepository.findByUsername(currentUsername).orElseThrow(null);
+
+        if (currentUser != null && currentUser.getId() == targetUser.getId()) {
+            throw new BusinessException(400, "Bạn là SYSTEM_ADMIN, không thể tự hạ quyền của chính mình để tránh mất quyền quản trị hệ thống!");
+        }
+
+        targetUser.setRole(newRole);
+        targetUser.setTokenVersion(targetUser.getTokenVersion() + 1);
+
+        return userMapper.toResponse(userRepository.save(targetUser));
+    }
 
 
 }
