@@ -2,6 +2,8 @@ package com.be_paas.modules.user.service;
 
 import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
+import com.be_paas.modules.auditlog.entity.ActionType;
+import com.be_paas.modules.auditlog.service.AuditLogService;
 import com.be_paas.modules.user.dto.*;
 import com.be_paas.modules.user.entity.Role;
 import com.be_paas.modules.user.entity.User;
@@ -11,6 +13,7 @@ import com.be_paas.modules.user.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,11 +26,13 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UserMapper userMapper;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
 
-    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder) {
+    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder, AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.auditLogService = auditLogService;
     }
 
     // ================================================= ADMIN METHODS =================================================
@@ -67,6 +72,7 @@ public class UserServiceImpl implements UserService {
         } else {
             try {
 //                avatarInput = imageStorageService.uploadImage(userRequest.avatar(), "avatars");
+                avatarInput = createRequest.avatarUrl();
             }
             catch (Exception e) {
                 throw new BusinessException(500, "Error uploading avatar image to Cloud: " + e.getMessage());
@@ -91,7 +97,20 @@ public class UserServiceImpl implements UserService {
 
         user.setPassword(hashedPassword);
 
-        return userMapper.toResponse(userRepository.save(user));
+        User savedUser = userRepository.save(user);
+
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new BusinessException(401, "Không xác định được danh tính người thao tác"));
+
+        auditLogService.logUserAction(
+                currentUser.getId(),
+                ActionType.CREATE_USER,
+                savedUser.getId(),
+                "Admin " + currentUser.getUsername() + " đã tạo tài khoản mới: " + savedUser.getUsername() + " với quyền " + savedUser.getRole().name()
+        );
+
+        return userMapper.toResponse(savedUser);
     }
 
     @Override
@@ -107,20 +126,21 @@ public class UserServiceImpl implements UserService {
 
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
 
-        // 1. Người thực hiện hành động (Admin/System Admin)
         User currentUser = userRepository.findByUsername(currentUsername)
                 .orElseThrow(() -> new BusinessException(401, "Không xác định được danh tính người thao tác"));
 
-        // 2. Người bị thao tác (Nạn nhân)
+        // 2. Người bị thao tác
         User targetUser = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng có ID: " + targetUserId));
 
-        // 3. RÀO CHẶN 1: Chống Tự khóa chính mình
+        String oldStatus = targetUser.getStatus().toString();
+
+        // 3. Chống Tự khóa chính mình
         if (currentUser.getId() == targetUser.getId()) {
             throw new BusinessException(400, "Bạn không thể tự khóa hoặc mở khóa tài khoản của chính mình!");
         }
 
-        // 4. RÀO CHẶN 2: Chống lạm quyền (ADMIN không được ban ADMIN khác hoặc SYSTEM_ADMIN)
+        // 4. Chống lạm quyền (ADMIN không được ban ADMIN khác hoặc SYSTEM_ADMIN)
         if (currentUser.getRole() == Role.ADMIN) {
             if (targetUser.getRole() == Role.SYSTEM_ADMIN || targetUser.getRole() == Role.ADMIN) {
                 throw new BusinessException(403, "Bạn không đủ thẩm quyền để thao tác lên tài khoản cấp ngang hoặc cao hơn!");
@@ -130,7 +150,7 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(403, "Không thể thao tác lên tài khoản System Admin!");
         }
 
-        // 5. RÀO CHẶN 3: Tránh update trùng trạng thái cũ
+        // 5. Tránh update trùng trạng thái cũ
         if (targetUser.getStatus() == newStatus) {
             throw new BusinessException(400, "Tài khoản này hiện đã ở trạng thái " + newStatus.name());
         }
@@ -140,8 +160,17 @@ public class UserServiceImpl implements UserService {
         targetUser.setBanReason(newStatus == UserStatus.BANNED ? reason : null);
         targetUser.setTokenVersion(targetUser.getTokenVersion() + 1);
 
+        User savedUser = userRepository.save(targetUser);
 
-        return userMapper.toResponse(userRepository.save(targetUser));
+        ActionType action = (newStatus == UserStatus.BANNED) ? ActionType.BAN_USER : ActionType.UNBAN_USER;
+        auditLogService.logUserAction(
+                currentUser.getId(),
+                action,
+                savedUser.getId(),
+                "Admin " + currentUser.getUsername() + " chuyển trạng thái tài khoản " + targetUser.getUsername() + " từ: " + oldStatus + " thành " + newStatus.name()
+        );
+
+        return userMapper.toResponse(savedUser);
     }
 
     @Override
@@ -153,8 +182,11 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(400, "Người dùng này đã mang quyền " + newRole.name() + " rồi!");
         }
 
+        Role oldRole = targetUser.getRole();
+
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-        User currentUser = userRepository.findByUsername(currentUsername).orElseThrow(null);
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new BusinessException(401, "Không xác định được danh tính người thao tác"));
 
         if (currentUser != null && currentUser.getId() == targetUser.getId()) {
             throw new BusinessException(400, "Bạn là SYSTEM_ADMIN, không thể tự hạ quyền của chính mình để tránh mất quyền quản trị hệ thống!");
@@ -163,7 +195,17 @@ public class UserServiceImpl implements UserService {
         targetUser.setRole(newRole);
         targetUser.setTokenVersion(targetUser.getTokenVersion() + 1);
 
-        return userMapper.toResponse(userRepository.save(targetUser));
+        User savedUser = userRepository.save(targetUser);
+
+        ActionType action = (newRole == Role.ADMIN) ? ActionType.GRANT_ADMIN : ActionType.REVOKE_ADMIN;
+        auditLogService.logUserAction(
+                currentUser.getId(),
+                action,
+                savedUser.getId(),
+                "Admin " + currentUser.getUsername() + " cập nhật quyền của user " + savedUser.getUsername() + " từ " + oldRole + " thành " + newRole.name()
+        );
+
+        return userMapper.toResponse(savedUser);
     }
 
     @Override
@@ -187,18 +229,23 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(403, "Không thể can thiệp mật khẩu của tài khoản System Admin tối cao!");
         }
 
-        // 4. XỬ LÝ MẬT KHẨU (Nếu trống thì tự sinh)
+        // XỬ LÝ MẬT KHẨU (Nếu trống thì tự sinh)
         String rawPassword = request.password();
         if (rawPassword == null || rawPassword.isBlank()) {
-            rawPassword = generateRandomPassword(); // Kích hoạt hàm sinh pass tự động dưới dòng dưới
+            rawPassword = generateRandomPassword();
         }
 
-        // 5. MÃ HÓA, TĂNG VERSION TOKEN VÀ LƯU DB
         targetUser.setPassword(passwordEncoder.encode(rawPassword));
-        targetUser.setTokenVersion(targetUser.getTokenVersion() + 1); // Đạp văng các phiên đăng nhập cũ
+        targetUser.setTokenVersion(targetUser.getTokenVersion() + 1);
         userRepository.save(targetUser);
 
-        // 6. Trả về thông tin kèm mật khẩu thô để hiển thị lên màn hình Admin
+        auditLogService.logUserAction(
+                currentUser.getId(),
+                ActionType.RESET_PASSWORD,
+                targetUser.getId(),
+                "Admin " + currentUser.getUsername() + " cấp lại mật khẩu mới cho user " + targetUser.getUsername()
+        );
+
         return new ResetPasswordResponse(targetUser.getUsername(), rawPassword);
     }
 
@@ -247,6 +294,13 @@ public class UserServiceImpl implements UserService {
         currentUser.setTokenVersion(currentUser.getTokenVersion() + 1);
 
         userRepository.save(currentUser);
+
+        auditLogService.logUserAction(
+                currentUser.getId(),
+                ActionType.CHANGE_PASSWORD,
+                currentUser.getId(),
+                "Người dùng " + currentUser.getUsername() + " đã thay đổi mật khẩu"
+        );
     }
 
     @Override
@@ -256,9 +310,20 @@ public class UserServiceImpl implements UserService {
         User currentUser = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy thông tin người dùng"));
 
+        String oldFullName = currentUser.getFullName();
+
         // Tạm thời chỉ có fullName, sau này cần thêm avatar, ...
         currentUser.setFullName(request.fullName());
 
-        return userMapper.toResponse(userRepository.save(currentUser));
+        User savedUser = userRepository.save(currentUser);
+
+        auditLogService.logUserAction(
+                currentUser.getId(),
+                ActionType.UPDATE_USER,
+                savedUser.getId(),
+                "User " + currentUser.getUsername() + " đã đổi fullName từ " + oldFullName + " sang " + currentUser.getFullName()
+        );
+
+        return userMapper.toResponse(savedUser);
     }
 }
