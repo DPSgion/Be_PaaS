@@ -7,6 +7,8 @@ import com.be_paas.modules.user.entity.UserStatus;
 
 public interface UserService {
 
+    // --- ADMIN METHODS ---
+
     PageResponse<UserResponse> findAll(String search, int page, int size);
 
     UserResponse create(AddNewUser createRequest);
@@ -18,4 +20,12 @@ public interface UserService {
     UserResponse updateRole(int targetUserId, Role newRole);
 
     ResetPasswordResponse resetPassword(int targetUserId, ResetPasswordRequest request);
+
+    // --- PROFILE METHODS ---
+
+    UserResponse viewProfile();
+
+    void changeMyPassword(ChangeMyPasswordRequest request);
+
+    UserResponse updateProfile(UpdateProfileRequest request);
 }

@@ -30,6 +30,8 @@ public class UserServiceImpl implements UserService {
         this.passwordEncoder = passwordEncoder;
     }
 
+    // ================================================= ADMIN METHODS =================================================
+
     @Override
     public PageResponse<UserResponse> findAll(String search, int page, int size) {
         String term = (search != null && !search.isBlank()) ? search.strip() : null;
@@ -213,5 +215,50 @@ public class UserServiceImpl implements UserService {
             sb.append(PASSWORD_ALLOW_BASE.charAt(rndCharAt));
         }
         return sb.toString();
+    }
+
+    // ================================================= PROFILE METHODS =================================================
+
+    @Override
+    public UserResponse viewProfile() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy thông tin người dùng"));
+
+        return userMapper.toResponse(currentUser);
+    }
+
+    @Override
+    public void changeMyPassword(ChangeMyPasswordRequest request) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy thông tin người dùng"));
+
+        if (!passwordEncoder.matches(request.oldPassword(), currentUser.getPassword())) {
+            throw new BusinessException(400, "Mật khẩu hiện tại không chính xác!");
+        }
+
+        if (request.oldPassword().equals(request.newPassword())) {
+            throw new BusinessException(400, "Mật khẩu mới không được trùng với mật khẩu cũ!");
+        }
+
+        currentUser.setPassword(passwordEncoder.encode(request.newPassword()));
+        currentUser.setTokenVersion(currentUser.getTokenVersion() + 1);
+
+        userRepository.save(currentUser);
+    }
+
+    @Override
+    public UserResponse updateProfile(UpdateProfileRequest request) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy thông tin người dùng"));
+
+        // Tạm thời chỉ có fullName, sau này cần thêm avatar, ...
+        currentUser.setFullName(request.fullName());
+
+        return userMapper.toResponse(userRepository.save(currentUser));
     }
 }
