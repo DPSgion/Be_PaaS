@@ -4,6 +4,8 @@ import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.auditlog.entity.ActionType;
 import com.be_paas.modules.auditlog.service.AuditLogService;
+import com.be_paas.modules.notification.entity.NotificationType;
+import com.be_paas.modules.notification.service.NotificationService;
 import com.be_paas.modules.user.dto.*;
 import com.be_paas.modules.user.entity.Role;
 import com.be_paas.modules.user.entity.User;
@@ -27,12 +29,14 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final BCryptPasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
-    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder, AuditLogService auditLogService) {
+    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder, AuditLogService auditLogService, NotificationService notificationService) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
+        this.notificationService = notificationService;
     }
 
     // ================================================= ADMIN METHODS =================================================
@@ -205,6 +209,15 @@ public class UserServiceImpl implements UserService {
                 "Admin " + currentUser.getUsername() + " cập nhật quyền của user " + savedUser.getUsername() + " từ " + oldRole + " thành " + newRole.name()
         );
 
+        notificationService.sendNotification(
+                savedUser.getId(),        // Gửi cho ai? -> Gửi cho target user
+                savedUser.getUsername(),
+                null,                     // Cập nhật quyền không thuộc Project nào -> null
+                "Cập nhật quyền hạn",
+                "Tài khoản của bạn vừa được Admin cập nhật quyền thành: " + newRole.name(),
+                (newRole == Role.ADMIN) ? NotificationType.SUCCESS : NotificationType.WARNING
+        );
+
         return userMapper.toResponse(savedUser);
     }
 
@@ -244,6 +257,15 @@ public class UserServiceImpl implements UserService {
                 ActionType.RESET_PASSWORD,
                 targetUser.getId(),
                 "Admin " + currentUser.getUsername() + " cấp lại mật khẩu mới cho user " + targetUser.getUsername()
+        );
+
+        notificationService.sendNotification(
+                targetUser.getId(),
+                targetUser.getUsername(),
+                null,
+                "Bảo mật tài khoản",
+                "Mật khẩu của bạn vừa được Admin đặt lại. Vui lòng liên hệ Admin để nhận mật khẩu mới !",
+                NotificationType.WARNING
         );
 
         return new ResetPasswordResponse(targetUser.getUsername(), rawPassword);
