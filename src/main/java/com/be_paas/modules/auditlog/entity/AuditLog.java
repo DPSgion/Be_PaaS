@@ -1,6 +1,5 @@
 package com.be_paas.modules.auditlog.entity;
 
-import com.be_paas.modules.user.entity.UserStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
