@@ -1,5 +1,6 @@
 package com.be_paas.modules.user.repository;
 
+import com.be_paas.modules.user.entity.Role;
 import com.be_paas.modules.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -12,10 +13,12 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Integer> {
 
     @Query("SELECT u FROM User u WHERE " +
+            "(:term IS NULL OR " +
             "LOWER(u.username) LIKE LOWER(CONCAT('%', :term, '%')) OR " +
             "LOWER(u.fullName) LIKE LOWER(CONCAT('%', :term, '%')) OR " +
-            "LOWER(u.email) LIKE LOWER(CONCAT('%', :term, '%'))")
-    Page<User> searchUsers(@Param("term") String term, Pageable pageable);
+            "LOWER(u.email) LIKE LOWER(CONCAT('%', :term, '%'))) " +
+            "AND (:role IS NULL OR u.role = :role)")
+    Page<User> searchUsersWithFilter(@Param("term") String term, @Param("role") Role role, Pageable pageable);
 
     boolean existsByEmail(String email);
     boolean existsByUsername(String username);

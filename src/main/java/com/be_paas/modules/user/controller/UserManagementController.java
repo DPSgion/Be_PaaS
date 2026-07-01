@@ -22,9 +22,10 @@ public class UserManagementController {
     @GetMapping({"", "/"})
     public PageResponse<UserResponse> findAll(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String role,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return userService.findAll(search, page, size);
+        return userService.findAll(search, role, page, size);
     }
 
     @PostMapping
@@ -33,6 +34,7 @@ public class UserManagementController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    // Ban / Unban
     @PatchMapping("/{id}/status")
     public ResponseEntity<UserResponse> changeUserStatus(
             @PathVariable int id,

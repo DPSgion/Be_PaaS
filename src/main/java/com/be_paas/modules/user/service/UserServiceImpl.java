@@ -12,6 +12,7 @@ import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.entity.UserStatus;
 import com.be_paas.modules.user.mapper.UserMapper;
 import com.be_paas.modules.user.repository.UserRepository;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -42,17 +43,21 @@ public class UserServiceImpl implements UserService {
     // ================================================= ADMIN METHODS =================================================
 
     @Override
-    public PageResponse<UserResponse> findAll(String search, int page, int size) {
+    public PageResponse<UserResponse> findAll(String search, String roleStr, int page, int size) {
         String term = (search != null && !search.isBlank()) ? search.strip() : null;
+
+        Role role = null;
+        if (roleStr != null && !roleStr.isBlank()) {
+            try {
+                role = Role.valueOf(roleStr.trim().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Role không hợp lệ: " + roleStr);
+            }
+        }
+
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
 
-        org.springframework.data.domain.Page<User> userPage;
-
-        if (term != null) {
-            userPage = userRepository.searchUsers(term, pageable);
-        } else {
-            userPage = userRepository.findAll(pageable);
-        }
+        Page<User> userPage = userRepository.searchUsersWithFilter(term, role, pageable);
 
         return PageResponse.from(userPage.map(userMapper::toResponse));
     }
@@ -186,6 +191,10 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(400, "Người dùng này đã mang quyền " + newRole.name() + " rồi!");
         }
 
+        if (newRole == Role.SYSTEM_ADMIN){
+            throw new BusinessException(400, "Không thể cấp quyền SYSTEM ADMIN ! Chỉ có 1 người có quyền này");
+        }
+
         Role oldRole = targetUser.getRole();
 
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -239,7 +248,7 @@ public class UserServiceImpl implements UserService {
             }
         }
         if (targetUser.getRole() == Role.SYSTEM_ADMIN && currentUser.getId() != targetUser.getId()) {
-            throw new BusinessException(403, "Không thể can thiệp mật khẩu của tài khoản System Admin tối cao!");
+            throw new BusinessException(403, "Không thể can thiệp mật khẩu của tài khoản System Admin!");
         }
 
         // XỬ LÝ MẬT KHẨU (Nếu trống thì tự sinh)

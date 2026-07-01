@@ -9,7 +9,7 @@ public interface UserService {
 
     // --- ADMIN METHODS ---
 
-    PageResponse<UserResponse> findAll(String search, int page, int size);
+    PageResponse<UserResponse> findAll(String search, String role, int page, int size);
 
     UserResponse create(AddNewUser createRequest);
 
