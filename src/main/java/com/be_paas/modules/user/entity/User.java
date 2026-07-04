@@ -34,6 +34,9 @@ public class User {
     @Column(name = "ten_dang_nhap_github", length = 50)
     private String githubUsername;
 
+    @Column(name = "token_truy_cap_github", length = 255)
+    private String githubAccessToken;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "vai_tro", length = 20, nullable = false)
     private Role role;

@@ -20,6 +20,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 
@@ -356,5 +357,23 @@ public class UserServiceImpl implements UserService {
         );
 
         return userMapper.toResponse(savedUser);
+    }
+
+    @Override
+    @Transactional
+    public void linkGithubAccount(String username, String githubUsername, String githubAccessToken) {
+        // Tìm user bằng username
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy User với username: " + username));
+
+        // Cập nhật thông tin Github
+        user.setGithubUsername(githubUsername);
+        user.setGithubAccessToken(githubAccessToken);
+
+        System.out.println("Github Username: " + githubUsername);
+        System.out.println("Github Access Token: " + githubAccessToken);
+
+        // Lưu lại vào DB
+        userRepository.save(user);
     }
 }

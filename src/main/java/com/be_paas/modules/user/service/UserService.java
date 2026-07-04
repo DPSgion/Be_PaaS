@@ -28,4 +28,6 @@ public interface UserService {
     void changeMyPassword(ChangeMyPasswordRequest request);
 
     UserResponse updateProfile(UpdateProfileRequest request);
+
+    void linkGithubAccount(String username, String githubUsername, String githubAccessToken);
 }
