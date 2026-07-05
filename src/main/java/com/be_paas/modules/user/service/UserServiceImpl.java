@@ -192,6 +192,30 @@ public class UserServiceImpl implements UserService {
                 "Admin " + currentUser.getUsername() + " chuyển trạng thái tài khoản " + targetUser.getUsername() + " từ: " + oldStatus + " thành " + newStatus.name()
         );
 
+
+        String subject;
+        String templateName;
+        Map<String, Object> emailVariables = new java.util.HashMap<>();
+        emailVariables.put("fullName", savedUser.getFullName());
+        emailVariables.put("username", savedUser.getUsername());
+
+        if (newStatus == UserStatus.BANNED) {
+            subject = "CẢNH BÁO: Tài khoản của bạn đã bị khóa";
+            templateName = "account-banned";
+
+            emailVariables.put("reason", (reason != null && !reason.trim().isEmpty()) ? reason : "Vi phạm chính sách hệ thống (Không có lý do cụ thể)");
+        } else {
+            subject = "THÔNG BÁO: Tài khoản của bạn đã được mở khóa";
+            templateName = "account-unbanned";
+        }
+
+        mailService.sendHtmlMail(
+                savedUser.getEmail(),
+                subject,
+                templateName,
+                emailVariables
+        );
+
         return userMapper.toResponse(savedUser);
     }
 
@@ -286,8 +310,21 @@ public class UserServiceImpl implements UserService {
                 targetUser.getUsername(),
                 null,
                 "Bảo mật tài khoản",
-                "Mật khẩu của bạn vừa được Admin đặt lại. Vui lòng liên hệ Admin để nhận mật khẩu mới !",
+                "Mật khẩu của bạn vừa được Admin đặt lại !",
                 NotificationType.WARNING
+        );
+
+        Map<String, Object> emailVariables = Map.of(
+                "fullName", targetUser.getFullName(),
+                "username", targetUser.getUsername(),
+                "newPassword", request.password()
+        );
+
+        mailService.sendHtmlMail(
+                targetUser.getEmail(),
+                "CẢNH BÁO: Mật khẩu của bạn vừa được đặt lại",
+                "reset-password",
+                emailVariables
         );
 
         return new ResetPasswordResponse(targetUser.getUsername(), rawPassword);

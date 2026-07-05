@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Tài khoản bị khóa</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #d9534f; border-radius: 8px; border-top: 5px solid #d9534f;">
+  <h2 style="color: #d9534f;">Tài khoản của bạn đã bị khóa</h2>
+
+  <p>Xin chào <strong th:text="${fullName}">Developer</strong>,</p>
+
+  <p>Hệ thống Be PaaS thông báo: Tài khoản của bạn vừa bị Quản trị viên khóa quyền truy cập.</p>
+
+  <div style="background-color: #fcf8e3; border-left: 4px solid #f0ad4e; padding: 15px; margin: 20px 0;">
+    <p style="margin: 0;"><strong>Tên đăng nhập:</strong> <span th:text="${username}">...</span></p>
+    <p style="margin: 5px 0 0 0;"><strong>Lý do khóa:</strong> <span th:text="${reason}" style="color: #d9534f; font-weight: bold;">...</span></p>
+  </div>
+
+  <p>Tất cả các dịch vụ (container, domain) liên kết với tài khoản này có thể sẽ bị tạm ngưng. Nếu bạn cho rằng đây là sự nhầm lẫn, vui lòng liên hệ trực tiếp với System Admin để được giải quyết.</p>
+
+  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+  <p style="font-size: 12px; color: #777;">Hệ thống email tự động từ Be PaaS. Vui lòng không trả lời email này.</p>
+</div>
+</body>
+</html>

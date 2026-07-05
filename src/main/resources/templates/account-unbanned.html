@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Tài khoản được mở khóa</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+<div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #5cb85c; border-radius: 8px; border-top: 5px solid #5cb85c;">
+  <h2 style="color: #5cb85c;">Tài khoản đã được khôi phục</h2>
+
+  <p>Xin chào <strong th:text="${fullName}">Developer</strong>,</p>
+
+  <p>Hệ thống Be PaaS thông báo: Tài khoản của bạn đã được Quản trị viên mở khóa (Active) thành công.</p>
+
+  <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Tên đăng nhập:</strong> <span th:text="${username}">...</span></p>
+    <p><strong>Trạng thái hiện tại:</strong> <span style="color: #5cb85c; font-weight: bold;">Đang hoạt động (ACTIVE)</span></p>
+  </div>
+
+  <p>Bạn đã có thể đăng nhập trở lại hệ thống và tiếp tục triển khai các dự án của mình.</p>
+
+  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+  <p style="font-size: 12px; color: #777;">Hệ thống email tự động từ Be PaaS. Vui lòng không trả lời email này.</p>
+</div>
+</body>
+</html>
