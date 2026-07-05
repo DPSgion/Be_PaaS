@@ -4,6 +4,7 @@ import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.auditlog.entity.ActionType;
 import com.be_paas.modules.auditlog.service.AuditLogService;
+import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.notification.entity.NotificationType;
 import com.be_paas.modules.notification.service.NotificationService;
 import com.be_paas.modules.user.dto.*;
@@ -16,13 +17,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.util.Map;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -32,13 +33,15 @@ public class UserServiceImpl implements UserService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
+    private final MailService mailService;
 
-    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder, AuditLogService auditLogService, NotificationService notificationService) {
+    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder, AuditLogService auditLogService, NotificationService notificationService, MailService mailService) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
+        this.mailService = mailService;
     }
 
     // ================================================= ADMIN METHODS =================================================
@@ -119,6 +122,15 @@ public class UserServiceImpl implements UserService {
                 savedUser.getId(),
                 "Admin " + currentUser.getUsername() + " đã tạo tài khoản mới: " + savedUser.getUsername() + " với quyền " + savedUser.getRole().name()
         );
+
+        Map<String, Object> emailVariables = Map.of(
+                "fullName", createRequest.fullName(),
+                "username", createRequest.username(),
+                "email", createRequest.email(),
+                "password", createRequest.password()
+        );
+
+        mailService.sendHtmlMail(createRequest.email(), "Chào mừng bạn gia nhập hệ thống Be PaaS", "welcome-user", emailVariables);
 
         return userMapper.toResponse(savedUser);
     }
