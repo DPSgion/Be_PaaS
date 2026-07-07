@@ -1,0 +1,82 @@
+package com.be_paas.modules.project.controller;
+
+import com.be_paas.modules.project.dto.*;
+import com.be_paas.modules.project.entity.Project;
+import com.be_paas.modules.project.service.ProjectService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/projects")
+@RequiredArgsConstructor
+public class ProjectController {
+
+    private final ProjectService projectService;
+
+    @GetMapping
+    public ResponseEntity<List<ProjectListResponse>> getMyProjects() {
+        // Lấy username của người dùng đang đăng nhập từ Security Context
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        // Gọi Service và trả về HTTP 200 OK cùng mảng dữ liệu
+        List<ProjectListResponse> projects = projectService.getMyProjects(currentUsername);
+        return ResponseEntity.ok(projects);
+    }
+
+    @GetMapping("/{projectId}")
+    public ResponseEntity<ProjectDetailResponse> getProjectDetail(@PathVariable Integer projectId) {
+        // Lấy định danh user từ token hiện tại
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        // Gọi service xử lý và trả dữ liệu
+        ProjectDetailResponse response = projectService.getProjectDetail(projectId, currentUsername);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/import")
+    public ResponseEntity<Project> importProject(@Valid @RequestBody ProjectCreateRequest request) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        Project savedProject = projectService.importProject(request, currentUsername);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedProject);
+    }
+
+
+    @PostMapping("/{projectId}/envs")
+    public ResponseEntity<Void> addEnvVar(@PathVariable Integer projectId, @Valid @RequestBody EnvVarRequest request) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        projectService.addEnvironmentVariable(projectId, request, currentUsername);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @PutMapping("/{projectId}/envs/{envId}")
+    public ResponseEntity<Void> updateEnvVar(
+            @PathVariable Integer projectId,
+            @PathVariable Integer envId,
+            @Valid @RequestBody EnvVarRequest request) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        projectService.updateEnvironmentVariable(projectId, envId, request, currentUsername);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/{projectId}/envs/{envId}")
+    public ResponseEntity<Void> deleteEnvVar(@PathVariable Integer projectId, @PathVariable Integer envId) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        projectService.deleteEnvironmentVariable(projectId, envId, currentUsername);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{projectId}/envs")
+    public ResponseEntity<List<EnvVarResponse>> getEnvs(@PathVariable Integer projectId) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        return ResponseEntity.ok(projectService.getEnvironmentVariables(projectId, currentUsername));
+    }
+}

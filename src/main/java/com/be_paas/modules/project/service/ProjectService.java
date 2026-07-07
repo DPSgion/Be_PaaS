@@ -1,0 +1,18 @@
+package com.be_paas.modules.project.service;
+
+import com.be_paas.modules.project.dto.*;
+import com.be_paas.modules.project.entity.Project;
+
+import java.util.List;
+
+public interface ProjectService {
+    Project importProject(ProjectCreateRequest request, String username);
+    List<ProjectListResponse> getMyProjects(String username);
+    ProjectDetailResponse getProjectDetail(Integer projectId, String username);
+
+    void addEnvironmentVariable(Integer projectId, EnvVarRequest request, String username);
+    void updateEnvironmentVariable(Integer projectId, Integer envId, EnvVarRequest request, String username);
+    void deleteEnvironmentVariable(Integer projectId, Integer envId, String username);
+
+    List<EnvVarResponse> getEnvironmentVariables(Integer projectId, String username);
+}
