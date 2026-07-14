@@ -31,4 +31,22 @@ public interface DockerService {
      * @param imageName     Tên image cần xóa
      */
     void cleanupContainerAndImage(String containerName, String imageName);
+
+    /**
+     * Khởi động lại Container đang tồn tại
+     * @param containerId Mã ID của container
+     */
+    void restartContainer(String containerId);
+
+    /**
+     * Dừng Container đang chạy
+     * @param containerId Mã ID của container
+     */
+    void stopContainer(String containerId);
+
+    /**
+     * Khởi động Container đang bị dừng
+     * @param containerId Mã ID của container
+     */
+    void startContainer(String containerId);
 }

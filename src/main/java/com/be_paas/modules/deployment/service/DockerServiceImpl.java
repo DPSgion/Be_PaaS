@@ -137,4 +137,79 @@ public class DockerServiceImpl implements DockerService {
             log.warn("⚠️ Có lỗi khi xóa image cũ (có thể bỏ qua): {}", e.getMessage());
         }
     }
+
+    @Override
+    public void restartContainer(String containerId) {
+        log.info("🔄 Bắt đầu khởi động lại Container ID: {}", containerId);
+        try {
+            // Lệnh thực thi Restart của Docker Java
+            dockerClient.restartContainerCmd(containerId).exec();
+            log.info("✅ Đã khởi động lại thành công Container ID: {}", containerId);
+
+        } catch (com.github.dockerjava.api.exception.NotFoundException e) {
+            log.error("❌ Không tìm thấy Container ID: {}", containerId);
+            // Lỗi này xảy ra khi User lén xóa Container bằng lệnh trên server VPS
+            throw new BusinessException(404, "Không tìm thấy Container trên hệ thống máy chủ. Vui lòng bấm Deploy để khởi tạo lại.");
+
+        } catch (com.github.dockerjava.api.exception.DockerClientException e) {
+            log.error("❌ Lỗi mất kết nối Docker Daemon: {}", e.getMessage());
+            throw new BusinessException(500, "Mất kết nối đến Docker Engine.");
+
+        } catch (Exception e) {
+            log.error("❌ Lỗi không xác định khi restart Container {}: {}", containerId, e.getMessage());
+            throw new BusinessException(500, "Không thể khởi động lại dự án. Vui lòng kiểm tra log hệ thống.");
+        }
+    }
+
+    @Override
+    public void stopContainer(String containerId) {
+        log.info("🛑 Bắt đầu dừng Container ID: {}", containerId);
+        try {
+            // Cho phép Docker đợi tối đa 10 giây để tắt Graceful Shutdown
+            dockerClient.stopContainerCmd(containerId).withTimeout(10).exec();
+            log.info("✅ Đã dừng thành công Container ID: {}", containerId);
+
+        } catch (com.github.dockerjava.api.exception.NotModifiedException e) {
+            // Container đã tắt từ trước
+            log.info("⚪ Container ID: {} đã ở trạng thái dừng từ trước.", containerId);
+
+        } catch (com.github.dockerjava.api.exception.NotFoundException e) {
+            log.error("❌ Không tìm thấy Container ID: {}", containerId);
+            throw new BusinessException(404, "Không tìm thấy Container trên hệ thống máy chủ.");
+
+        } catch (com.github.dockerjava.api.exception.DockerClientException e) {
+            log.error("❌ Lỗi mất kết nối Docker Daemon: {}", e.getMessage());
+            throw new BusinessException(500, "Mất kết nối đến Docker Engine.");
+
+        } catch (Exception e) {
+            log.error("❌ Lỗi không xác định khi dừng Container {}: {}", containerId, e.getMessage());
+            throw new BusinessException(500, "Không thể dừng dự án. Vui lòng kiểm tra log hệ thống.");
+        }
+    }
+
+    @Override
+    public void startContainer(String containerId) {
+        log.info("▶️ Bắt đầu khởi động Container ID: {}", containerId);
+        try {
+            // Lệnh thực thi Start của Docker Java
+            dockerClient.startContainerCmd(containerId).exec();
+            log.info("✅ Đã khởi động thành công Container ID: {}", containerId);
+
+        } catch (com.github.dockerjava.api.exception.NotModifiedException e) {
+            // Container đã chạy từ trước
+            log.info("🟢 Container ID: {} đã ở trạng thái ĐANG CHẠY từ trước.", containerId);
+
+        } catch (com.github.dockerjava.api.exception.NotFoundException e) {
+            log.error("❌ Không tìm thấy Container ID: {}", containerId);
+            throw new BusinessException(404, "Không tìm thấy Container trên hệ thống máy chủ.");
+
+        } catch (com.github.dockerjava.api.exception.DockerClientException e) {
+            log.error("❌ Lỗi mất kết nối Docker Daemon: {}", e.getMessage());
+            throw new BusinessException(500, "Mất kết nối đến Docker Engine.");
+
+        } catch (Exception e) {
+            log.error("❌ Lỗi không xác định khi khởi động Container {}: {}", containerId, e.getMessage());
+            throw new BusinessException(500, "Không thể khởi động dự án. Vui lòng kiểm tra log hệ thống.");
+        }
+    }
 }

@@ -141,6 +141,103 @@ public class DeploymentServiceImpl implements DeploymentService {
         return CompletableFuture.completedFuture(null);
     }
 
+    @Override
+    public void restartProject(Integer projectId, String username) {
+        log.info("User {} yêu cầu Restart Project ID: {}", username, projectId);
+
+        // 1. Tìm dự án
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        // 2. Bảo mật: Xác thực quyền sở hữu tuyệt đối
+        if (!project.getUser().getUsername().equals(username)) {
+            log.warn("Cảnh báo xâm nhập: User {} cố tình Restart Project {} của User {}",
+                    username, projectId, project.getUser().getUsername());
+            throw new BusinessException(403, "Bạn không có quyền thao tác trên dự án này");
+        }
+
+        // 3. Validate logic: Dự án đã từng Deploy chưa?
+        String containerId = project.getContainerId();
+        if (containerId == null || containerId.trim().isEmpty()) {
+            throw new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể Restart.");
+        }
+
+        // 4. Thực thi Restart
+        dockerService.restartContainer(containerId);
+
+        // 5. Đồng bộ trạng thái DB
+        // Nếu dự án đang bị STOPPED hoặc CRASHED, sau khi restart thành công phải đổi lại thành RUNNING
+        if (project.getStatus() != ProjectStatus.RUNNING) {
+            project.setStatus(ProjectStatus.RUNNING);
+            projectRepository.save(project);
+            log.info("Đã cập nhật trạng thái Project {} thành RUNNING", projectId);
+        }
+    }
+
+    @Override
+    public void stopProject(Integer projectId, String username) {
+        log.info("User {} yêu cầu Stop Project ID: {}", username, projectId);
+
+        // 1. Tìm dự án
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        // 2. Bảo mật: Xác thực quyền sở hữu
+        if (!project.getUser().getUsername().equals(username)) {
+            log.warn("Cảnh báo xâm nhập: User {} cố tình Stop Project {} của User {}",
+                    username, projectId, project.getUser().getUsername());
+            throw new BusinessException(403, "Bạn không có quyền thao tác trên dự án này");
+        }
+
+        // 3. Validate logic: Đã có Container chưa
+        String containerId = project.getContainerId();
+        if (containerId == null || containerId.trim().isEmpty()) {
+            throw new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể dừng.");
+        }
+
+        // 4. Gọi Docker API để dừng
+        dockerService.stopContainer(containerId);
+
+        // 5. Cập nhật trạng thái xuống Database
+        if (project.getStatus() != ProjectStatus.STOPPED) {
+            project.setStatus(ProjectStatus.STOPPED);
+            projectRepository.save(project);
+            log.info("Đã cập nhật trạng thái Project {} thành STOPPED", projectId);
+        }
+    }
+
+    @Override
+    public void startProject(Integer projectId, String username) {
+        log.info("User {} yêu cầu Start Project ID: {}", username, projectId);
+
+        // 1. Tìm dự án
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        // 2. Bảo mật: Xác thực quyền sở hữu
+        if (!project.getUser().getUsername().equals(username)) {
+            log.warn("Cảnh báo xâm nhập: User {} cố tình Start Project {} của User {}",
+                    username, projectId, project.getUser().getUsername());
+            throw new BusinessException(403, "Bạn không có quyền thao tác trên dự án này");
+        }
+
+        // 3. Validate logic: Đã có Container chưa
+        String containerId = project.getContainerId();
+        if (containerId == null || containerId.trim().isEmpty()) {
+            throw new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể khởi động.");
+        }
+
+        // 4. Gọi Docker API để khởi động
+        dockerService.startContainer(containerId);
+
+        // 5. Cập nhật trạng thái xuống Database
+        if (project.getStatus() != ProjectStatus.RUNNING) {
+            project.setStatus(ProjectStatus.RUNNING);
+            projectRepository.save(project);
+            log.info("Đã cập nhật trạng thái Project {} thành RUNNING", projectId);
+        }
+    }
+
     /**
      * Hàm phụ trợ lưu trạng thái vào DB.
      * Lưu độc lập để không giữ Transaction kéo dài.
