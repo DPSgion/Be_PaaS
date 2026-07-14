@@ -39,6 +39,12 @@ public class Project {
     @Column(name = "nhanh", length = 100, nullable = false)
     private String branch;
 
+    @Column(name = "thu_muc_goc", length = 255)
+    private String rootDirectory; // Ví dụ: "backend", "src/app", hoặc null/rỗng nếu ở thư mục gốc
+
+    @Column(name = "cong_du_an")
+    private Integer targetPort; // Port do app của user mở (vd: 3000, 8080)
+
     @Column(name = "cong_noi_bo")
     private Integer internalPort;
 

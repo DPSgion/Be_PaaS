@@ -123,7 +123,43 @@
             <scope>compile</scope>
         </dependency>
 
+        <!-- Eclipse JGit: Xử lý Git Clone không cần cài Git client trên server -->
+        <dependency>
+            <groupId>org.eclipse.jgit</groupId>
+            <artifactId>org.eclipse.jgit</artifactId>
+            <version>7.7.0.202606012155-r</version>
+            <scope>compile</scope>
+        </dependency>
 
+        <!-- Docker Java API Client: Giao tiếp với Docker Daemon -->
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-api</artifactId>
+            <version>3.7.1</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-transport-httpclient5</artifactId>
+            <version>3.7.1</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-core</artifactId>
+            <version>3.7.1</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- Source: https://mvnrepository.com/artifact/com.github.docker-java/docker-java -->
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java</artifactId>
+            <version>3.7.1</version>
+            <scope>compile</scope>
+        </dependency>
     </dependencies>
 
     <build>

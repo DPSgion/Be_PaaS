@@ -52,6 +52,15 @@ public class ProjectServiceImpl implements ProjectService {
         // Gán User sở hữu
         project.setUser(user);
 
+        // Gán targetPort
+        project.setTargetPort(request.targetPort());
+
+        // Gán đường dẫn
+        String rootDir = request.rootDirectory();
+        if (rootDir != null && !rootDir.isBlank()) {
+            project.setRootDirectory(rootDir);
+        }
+
         // Trạng thái ban đầu
         project.setStatus(ProjectStatus.STOPPED);
 
@@ -88,10 +97,14 @@ public class ProjectServiceImpl implements ProjectService {
         return new ProjectDetailResponse(
                 project.getId(),
                 project.getProjectName(),
-                project.getSubdomain(), // Map cột subdomain trong DB thành trường domain trả về
+                project.getSubdomain(),
                 project.getBranch(),
                 project.getStatus(),
-                project.getCreatedAt()
+                project.getCreatedAt(),
+
+                project.getTargetPort(),
+                project.getRootDirectory(),
+                project.getGithubUrl()
         );
     }
 
@@ -152,6 +165,49 @@ public class ProjectServiceImpl implements ProjectService {
             }
             return new EnvVarResponse(env.getId(), env.getKeyName(), displayValue, env.getIsSecret());
         }).toList();
+    }
+
+    @Override
+    @Transactional
+    public void updateProjectSettings(Integer projectId, ProjectUpdateRequest request, String username) {
+        log.info("User {} yêu cầu cập nhật cấu hình Project ID: {}", username, projectId);
+
+        // 1. Tìm dự án
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        // 2. Bảo mật: Xác thực quyền sở hữu
+        if (!project.getUser().getUsername().equals(username)) {
+            log.warn("Cảnh báo xâm nhập: User {} cố gắng sửa Project {} của User {}",
+                    username, projectId, project.getUser().getUsername());
+            throw new BusinessException(403, "Bạn không có quyền chỉnh sửa dự án này");
+        }
+
+        // ==========================================
+        // SỬA GẮT: KIỂM TRA LOGIC TRÙNG LẶP & CHUẨN HÓA DỮ LIỆU
+        // ==========================================
+        String normalizedProjectName = request.projectName().toLowerCase();
+
+        // Kiểm tra xem tổ hợp (Tên mới + Nhánh mới) đã bị thằng khác chiếm chưa (loại trừ chính nó)
+        if (projectRepository.existsByProjectNameAndBranchAndIdNot(normalizedProjectName, request.branch(), projectId)) {
+            throw new BusinessException(400, "Dự án '" + normalizedProjectName + "' với nhánh '" + request.branch() + "' đã tồn tại trong hệ thống. Vui lòng chọn tên hoặc nhánh khác.");
+        }
+
+        // 3. Cập nhật các trường thông tin
+        project.setProjectName(normalizedProjectName); // Đã chuẩn hóa chữ thường
+        project.setBranch(request.branch());
+        project.setTargetPort(request.targetPort());
+
+        // Xử lý chuỗi rỗng thành null để DB gọn gàng (nếu cần)
+        String rootDir = request.rootDirectory();
+        if (rootDir != null && rootDir.trim().isEmpty()) {
+            rootDir = null;
+        }
+        project.setRootDirectory(rootDir);
+
+        // 4. Lưu xuống Database
+        projectRepository.save(project);
+        log.info("Cập nhật thành công cấu hình cho Project ID: {}", projectId);
     }
 
 

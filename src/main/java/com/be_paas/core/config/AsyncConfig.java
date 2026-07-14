@@ -22,4 +22,14 @@ public class AsyncConfig {
         return executor;
     }
 
+    @Bean(name = "taskExecutor")
+    public Executor taskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5); // Số luồng chạy đồng thời tối thiểu
+        executor.setMaxPoolSize(10); // Số luồng chạy đồng thời tối đa
+        executor.setQueueCapacity(25); // Xếp hàng tối đa 25 lượt deploy
+        executor.setThreadNamePrefix("DeployThread-");
+        executor.initialize();
+        return executor;
+    }
 }

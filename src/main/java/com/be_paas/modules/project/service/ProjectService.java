@@ -15,4 +15,6 @@ public interface ProjectService {
     void deleteEnvironmentVariable(Integer projectId, Integer envId, String username);
 
     List<EnvVarResponse> getEnvironmentVariables(Integer projectId, String username);
+
+    void updateProjectSettings(Integer projectId, ProjectUpdateRequest request, String username);
 }

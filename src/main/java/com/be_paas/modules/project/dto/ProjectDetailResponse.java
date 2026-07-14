@@ -9,5 +9,9 @@ public record ProjectDetailResponse(
         String domain,
         String branch,
         ProjectStatus status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        Integer targetPort,
+        String rootDirectory,
+        String githubUrl
 ) {}

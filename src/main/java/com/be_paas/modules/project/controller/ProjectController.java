@@ -79,4 +79,16 @@ public class ProjectController {
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
         return ResponseEntity.ok(projectService.getEnvironmentVariables(projectId, currentUsername));
     }
+
+    @PutMapping("/{projectId}/settings")
+    public ResponseEntity<String> updateProjectSettings(
+            @PathVariable Integer projectId,
+            @Valid @RequestBody ProjectUpdateRequest request
+    ) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        projectService.updateProjectSettings(projectId, request, currentUsername);
+
+        return ResponseEntity.ok("Cập nhật cấu hình dự án thành công. Bạn cần Deploy lại để áp dụng thay đổi.");
+    }
 }
