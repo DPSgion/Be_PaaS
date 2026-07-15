@@ -14,6 +14,7 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import com.github.dockerjava.api.model.Image;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -210,6 +211,34 @@ public class DockerServiceImpl implements DockerService {
         } catch (Exception e) {
             log.error("❌ Lỗi không xác định khi khởi động Container {}: {}", containerId, e.getMessage());
             throw new BusinessException(500, "Không thể khởi động dự án. Vui lòng kiểm tra log hệ thống.");
+        }
+    }
+
+    @Override
+    public Long getImageSize(String imageName) {
+        log.info("🔍 Đang đo dung lượng cho Image Tag: {}", imageName);
+        try {
+            List<Image> images = dockerClient.listImagesCmd()
+                    .withImageNameFilter(imageName)
+                    .exec();
+
+            if (images != null && !images.isEmpty()) {
+                // Lấy đối tượng Image đầu tiên khớp với tên tag
+                Long sizeInBytes = images.get(0).getSize();
+
+                // Backup lấy VirtualSize nếu Size bị null (rất hiếm khi xảy ra ở API List)
+                if (sizeInBytes == null || sizeInBytes == 0L) {
+                    sizeInBytes = images.get(0).getVirtualSize();
+                }
+
+                return sizeInBytes != null ? sizeInBytes : 0L;
+            }
+
+            log.warn("⚠️ Không tìm thấy Image nào có tên: {}", imageName);
+            return 0L;
+        } catch (Exception e) {
+            log.warn("⚠️ Lỗi khi lấy kích thước Image {}: {}", imageName, e.getMessage());
+            return 0L;
         }
     }
 }

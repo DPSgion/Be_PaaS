@@ -1,9 +1,11 @@
 package com.be_paas.modules.deployment.service;
 
 import com.be_paas.core.exception.BusinessException;
+import com.be_paas.modules.deployment.dto.WorkspaceResult;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -21,11 +23,11 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private String baseWorkspaceDir;
 
     @Override
-    public Path cloneRepository(Integer projectId, String githubUrl, String branch, String patToken) {
+    public WorkspaceResult cloneRepository(Integer projectId, String githubUrl, String branch, String patToken) {
         Path projectWorkspace = Paths.get(baseWorkspaceDir, "project_" + projectId);
 
         try {
-            // 1. Dọn dẹp thư mục cũ bằng hàm Force Delete tự viết
+            // 1. Dọn dẹp thư mục cũ
             if (Files.exists(projectWorkspace)) {
                 log.info("Dọn dẹp workspace cũ tại: {}", projectWorkspace);
                 forceDelete(projectWorkspace);
@@ -38,7 +40,6 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             // 3. Thực thi JGit Clone
             log.info("Bắt đầu clone từ {} nhánh {}...", githubUrl, branch);
 
-            // SỬA GẮT: Khai báo Git object trong try-with-resources để tự động giải phóng File Lock
             try (Git git = Git.cloneRepository()
                     .setURI(githubUrl)
                     .setBranch(branch)
@@ -47,10 +48,20 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                     .call()) {
 
                 log.info("Clone mã nguồn thành công cho dự án ID: {}", projectId);
-            }
-            // Kết thúc block try này, Java sẽ tự động gọi git.close() để nhả toàn bộ file ra
 
-            return projectWorkspace;
+                // 4. Trích xuất siêu dữ liệu Git (Commit mới nhất)
+                Iterable<RevCommit> commits = git.log().setMaxCount(1).call();
+                RevCommit latestCommit = commits.iterator().next();
+
+                String commitSha = latestCommit.getName();
+                String commitMessage = latestCommit.getShortMessage();
+                String committer = latestCommit.getAuthorIdent().getName() + " <" + latestCommit.getAuthorIdent().getEmailAddress() + ">";
+
+                log.info("Thông tin Commit: SHA={}, By={}", commitSha, committer);
+
+                // Trả về DTO chứa toàn bộ thông tin
+                return new WorkspaceResult(projectWorkspace, commitSha, commitMessage, committer);
+            }
 
         } catch (IOException e) {
             log.error("Lỗi I/O khi thao tác với workspace", e);

@@ -1,5 +1,7 @@
 package com.be_paas.modules.deployment.service;
 
+import com.be_paas.modules.deployment.dto.WorkspaceResult;
+
 import java.nio.file.Path;
 
 public interface WorkspaceService {
@@ -12,7 +14,7 @@ public interface WorkspaceService {
      * @param patToken  Personal Access Token của GitHub (để clone private repo)
      * @return Đường dẫn Path tới thư mục chứa source code
      */
-    Path cloneRepository(Integer projectId, String githubUrl, String branch, String patToken);
+    WorkspaceResult cloneRepository(Integer projectId, String githubUrl, String branch, String patToken);
 
 
     /**

@@ -2,6 +2,10 @@ package com.be_paas.modules.deployment.service;
 
 import com.be_paas.core.config.AESUtil;
 import com.be_paas.core.exception.BusinessException;
+import com.be_paas.modules.deployment.dto.WorkspaceResult;
+import com.be_paas.modules.deployment.entity.Deployment;
+import com.be_paas.modules.deployment.entity.DeploymentStatus;
+import com.be_paas.modules.deployment.repository.DeploymentRepository;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
@@ -33,6 +37,7 @@ public class DeploymentServiceImpl implements DeploymentService {
 
     private final ProjectRepository projectRepository;
     private final EnvironmentVariableRepository envVarRepository;
+    private final DeploymentRepository deploymentRepository;
 
     private final WorkspaceService workspaceService;
     private final PortManagerService portManagerService;
@@ -46,12 +51,13 @@ public class DeploymentServiceImpl implements DeploymentService {
         log.info("🚀 [Project {}] BẮT ĐẦU TIẾN TRÌNH DEPLOY NGẦM", projectId);
 
         Project project = null;
+        Deployment deployment = null; // Khai báo bên ngoài để có thể dùng trong khối catch
 
         // BAO TRỌN TOÀN BỘ CODE BẰNG TRY-CATCH
         try {
             log.info("⏳ [Project {}] Đang xác thực thông tin dự án...", projectId);
 
-            // 1. Xác thực quyền sở hữu (Sử dụng hàm hàm JOIN FETCH vừa tạo)
+            // 1. Xác thực quyền sở hữu
             project = projectRepository.findByIdWithUser(projectId)
                     .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
@@ -67,17 +73,41 @@ public class DeploymentServiceImpl implements DeploymentService {
                 return CompletableFuture.completedFuture(null);
             }
 
-            // 2. Báo hiệu trạng thái Building
+            // 2. Báo hiệu trạng thái Building cho Project
             updateProjectStatus(project, ProjectStatus.BUILDING, null, null);
+
+            // ========================================================
+            // [MỞ SỔ LỊCH SỬ DEPLOYMENT]
+            // ========================================================
+            deployment = new Deployment();
+            deployment.setProjectId(projectId);
+            deployment.setStatus(DeploymentStatus.BUILDING);
+            deployment.setStartTime(LocalDateTime.now());
+
+            // Lưu lần 1 để DB sinh ID tự tăng
+            deployment = deploymentRepository.save(deployment);
+
+            // Sinh chuỗi đường dẫn vật lý dựa trên ID vừa tạo
+            String logFilePath = "/var/bepaas/logs/deploy_" + deployment.getId() + ".log";
+            deployment.setFilePath(logFilePath);
+
+            // Lưu lần 2 để chốt đường dẫn
+            deploymentRepository.save(deployment);
+            log.info("📝 [Project {}] Đã khởi tạo hồ sơ Deploy ID: {}", projectId, deployment.getId());
+            // ========================================================
 
             // 3. Khởi tạo Workspace & Clone code
             log.info("📦 [Project {}] BƯỚC 1/4: Đang kéo mã nguồn từ GitHub (Branch: {})...", projectId, project.getBranch());
-            Path workspacePath = workspaceService.cloneRepository(
+
+            // HỨNG TRỌN VẸN ĐỐI TƯỢNG VÀO BIẾN WorkspaceResult
+            WorkspaceResult workspaceResult = workspaceService.cloneRepository(
                     project.getId(),
                     project.getGithubUrl(),
                     project.getBranch(),
                     patToken
             );
+
+            Path workspacePath = workspaceResult.workspacePath();
 
             // Xử lý thư mục gốc (Root Directory)
             String subDir = project.getRootDirectory();
@@ -100,11 +130,9 @@ public class DeploymentServiceImpl implements DeploymentService {
             Integer internalPort = project.getInternalPort();
 
             if (internalPort == null) {
-                // Chỉ cấp mới khi deploy lần đầu
                 internalPort = portManagerService.allocateAvailablePort();
                 log.info("🔌 [Project {}] Cấp phát port mới: {}", projectId, internalPort);
             } else {
-                // Dùng lại port cũ cho Redeploy
                 log.info("🔌 [Project {}] Tái sử dụng port cũ: {}", projectId, internalPort);
             }
 
@@ -113,29 +141,56 @@ public class DeploymentServiceImpl implements DeploymentService {
             String imageName = imagePrefix + project.getId();
             String containerName = containerPrefix + project.getId();
 
-            // [SỬA GẮT: CHÈN LOGIC DỌN DẸP Ở ĐÂY]
             log.info("🧹 [Project {}] Đang dọn dẹp Container và Image cũ (nếu có)...", projectId);
             dockerService.cleanupContainerAndImage(containerName, imageName);
 
-            // Lấy Target Port từ DB, nếu null thì fallback về 80
             Integer targetPort = project.getTargetPort() != null ? project.getTargetPort() : 80;
 
             String imageId = dockerService.buildImage(buildContextPath, imageName);
             log.info("✅ [Project {}] Đã build xong Image ID: {}", projectId, imageId);
 
+            Long imageSize = dockerService.getImageSize(imageName);
+            deployment.setImageSize(imageSize);
+            log.info("📊 [Project {}] Dung lượng Image (Tag {}): {} Bytes", projectId, imageName, imageSize);
+
             String containerId = dockerService.runContainer(imageId, containerName, internalPort, targetPort, buildContextPath);
             log.info("✅ [Project {}] Đã chạy thành công Container ID: {}", projectId, containerId);
 
-            // 7. Hoàn tất
+            // 7. Hoàn tất (Cập nhật trạng thái Project hiện tại)
             updateProjectStatus(project, ProjectStatus.RUNNING, containerId, internalPort);
+
+            // ========================================================
+            // [CHỐT SỔ LỊCH SỬ THÀNH CÔNG]
+            // ========================================================
+            deployment.setCommitSha(workspaceResult.commitSha());
+            deployment.setCommitMessage(workspaceResult.commitMessage());
+            deployment.setCommitter(workspaceResult.committer());
+            deployment.setStatus(DeploymentStatus.SUCCESS);
+            deployment.setEndTime(LocalDateTime.now());
+
+            // Cập nhật bản ghi triển khai lần cuối
+            deploymentRepository.save(deployment);
+            // ========================================================
+
             log.info("🎉 [Project {}] HOÀN TẤT DEPLOY! Ứng dụng đang chạy ở Port: {}", projectId, internalPort);
             log.info("=====================================================");
 
         } catch (Exception e) {
-            log.error("🔥 [Project {}] LỖI CHÍ MẠNG KHI DEPLOY: {}", projectId, e.getMessage(), e); // In ra Stacktrace để bắt lỗi
+            log.error("🔥 [Project {}] LỖI CHÍ MẠNG KHI DEPLOY: {}", projectId, e.getMessage(), e);
+
             if (project != null) {
                 updateProjectStatus(project, ProjectStatus.CRASHED, null, null);
             }
+
+            // ========================================================
+            // [CHỐT SỔ LỊCH SỬ THẤT BẠI]
+            // ========================================================
+            if (deployment != null) {
+                deployment.setStatus(DeploymentStatus.FAILED);
+                deployment.setEndTime(LocalDateTime.now());
+                deploymentRepository.save(deployment);
+            }
+            // ========================================================
         }
 
         return CompletableFuture.completedFuture(null);

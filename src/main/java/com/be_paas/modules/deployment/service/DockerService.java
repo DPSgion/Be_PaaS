@@ -49,4 +49,9 @@ public interface DockerService {
      * @param containerId Mã ID của container
      */
     void startContainer(String containerId);
+
+    /**
+     * Lấy kích thước của Docker Image (trả về đơn vị Byte)
+     */
+    Long getImageSize(String imageId);
 }
