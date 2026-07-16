@@ -56,7 +56,7 @@ public class MonitoringServiceImpl implements MonitoringService {
     }
 
     @Override
-    public ResourceChartResponse getResourceChart(Integer projectId, String username) {
+    public List<ResourceChartResponse> getResourceChart(Integer projectId, String username) {
         // 1. Kiểm tra quyền sở hữu dự án (Tương tự hàm lấy thông số tĩnh)
         Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
@@ -72,20 +72,16 @@ public class MonitoringServiceImpl implements MonitoringService {
         // 3. Định dạng thời gian (Chỉ lấy Giờ:Phút:Giây cho biểu đồ)
         DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-        // 4. Bóc tách thành 3 mảng riêng biệt bằng Java Stream API
-        List<String> timestamps = logs.stream()
-                .map(log -> log.getCreatedAt().format(timeFormatter))
-                .toList();
-
-        List<Float> cpuUsages = logs.stream()
-                .map(ResourceLog::getCpuUsage)
-                .toList();
-
-        List<Float> ramUsages = logs.stream()
-                .map(ResourceLog::getRamUsage)
+        // 4. Gom trực tiếp thành 1 mảng các object
+        List<ResourceChartResponse> chartData = logs.stream()
+                .map(log -> new ResourceChartResponse(
+                        log.getCreatedAt().format(timeFormatter),
+                        log.getCpuUsage(),
+                        log.getRamUsage()
+                ))
                 .toList();
 
         // 5. Trả về DTO chuẩn
-        return new ResourceChartResponse(timestamps, cpuUsages, ramUsages);
+        return chartData;
     }
 }

@@ -1,6 +1,9 @@
 package com.be_paas.modules.monitoring.service;
 
 import com.be_paas.modules.monitoring.dto.ProjectMetricsResponse;
+import com.be_paas.modules.monitoring.dto.ResourceChartResponse;
+
+import java.util.List;
 
 public interface MonitoringService {
     /**
@@ -11,5 +14,5 @@ public interface MonitoringService {
     /**
      * Lấy dữ liệu mảng CPU/RAM theo thời gian để vẽ biểu đồ
      */
-    com.be_paas.modules.monitoring.dto.ResourceChartResponse getResourceChart(Integer projectId, String username);
+    List<ResourceChartResponse> getResourceChart(Integer projectId, String username);
 }

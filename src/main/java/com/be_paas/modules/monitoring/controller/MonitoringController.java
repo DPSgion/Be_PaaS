@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/monitoring")
 @RequiredArgsConstructor
@@ -30,12 +32,12 @@ public class MonitoringController {
     }
 
     @GetMapping("/projects/{projectId}/metrics/chart")
-    public ResponseEntity<ResourceChartResponse> getResourceChart(
+    public ResponseEntity<List<ResourceChartResponse>> getResourceChart(
             @PathVariable Integer projectId,
             Authentication authentication) {
 
         String username = authentication.getName();
-        ResourceChartResponse response = monitoringService.getResourceChart(projectId, username);
+        List<ResourceChartResponse> response = monitoringService.getResourceChart(projectId, username);
 
         return ResponseEntity.ok(response);
     }
