@@ -54,4 +54,9 @@ public interface DockerService {
      * Lấy kích thước của Docker Image (trả về đơn vị Byte)
      */
     Long getImageSize(String imageId);
+
+    /**
+     * Lấy chỉ số CPU và RAM hiện thời của Container (Snapshot 1 lần)
+     */
+    com.be_paas.modules.monitoring.dto.ContainerStatsDTO getContainerStats(String containerId);
 }

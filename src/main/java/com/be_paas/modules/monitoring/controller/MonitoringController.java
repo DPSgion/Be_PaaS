@@ -1,6 +1,7 @@
 package com.be_paas.modules.monitoring.controller;
 
 import com.be_paas.modules.monitoring.dto.ProjectMetricsResponse;
+import com.be_paas.modules.monitoring.dto.ResourceChartResponse;
 import com.be_paas.modules.monitoring.service.MonitoringService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +25,17 @@ public class MonitoringController {
 
         String username = authentication.getName();
         ProjectMetricsResponse response = monitoringService.getProjectMetrics(projectId, username);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/projects/{projectId}/metrics/chart")
+    public ResponseEntity<ResourceChartResponse> getResourceChart(
+            @PathVariable Integer projectId,
+            Authentication authentication) {
+
+        String username = authentication.getName();
+        ResourceChartResponse response = monitoringService.getResourceChart(projectId, username);
 
         return ResponseEntity.ok(response);
     }

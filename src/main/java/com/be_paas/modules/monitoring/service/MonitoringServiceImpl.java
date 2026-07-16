@@ -5,11 +5,17 @@ import com.be_paas.modules.deployment.entity.Deployment;
 import com.be_paas.modules.deployment.entity.DeploymentStatus;
 import com.be_paas.modules.deployment.repository.DeploymentRepository;
 import com.be_paas.modules.monitoring.dto.ProjectMetricsResponse;
+import com.be_paas.modules.monitoring.dto.ResourceChartResponse;
+import com.be_paas.modules.monitoring.entity.ResourceLog;
+import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -18,6 +24,7 @@ public class MonitoringServiceImpl implements MonitoringService {
 
     private final ProjectRepository projectRepository;
     private final DeploymentRepository deploymentRepository;
+    private final ResourceLogRepository resourceLogRepository;
 
     @Override
     public ProjectMetricsResponse getProjectMetrics(Integer projectId, String username) {
@@ -46,5 +53,39 @@ public class MonitoringServiceImpl implements MonitoringService {
 
         // 4. Đóng gói và trả về DTO
         return new ProjectMetricsResponse(containerId, imageSizeMb);
+    }
+
+    @Override
+    public ResourceChartResponse getResourceChart(Integer projectId, String username) {
+        // 1. Kiểm tra quyền sở hữu dự án (Tương tự hàm lấy thông số tĩnh)
+        Project project = projectRepository.findByIdWithUser(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        if (!project.getUser().getUsername().equals(username)) {
+            log.warn("Cảnh báo bảo mật: User {} cố xem biểu đồ của Project ID {}", username, projectId);
+            throw new BusinessException(403, "Bạn không có quyền truy cập dữ liệu giám sát của dự án này");
+        }
+
+        // 2. Lấy danh sách lịch sử tài nguyên (đã sắp xếp cũ -> mới)
+        List<ResourceLog> logs = resourceLogRepository.findByProjectIdOrderByCreatedAtAsc(projectId);
+
+        // 3. Định dạng thời gian (Chỉ lấy Giờ:Phút:Giây cho biểu đồ)
+        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss");
+
+        // 4. Bóc tách thành 3 mảng riêng biệt bằng Java Stream API
+        List<String> timestamps = logs.stream()
+                .map(log -> log.getCreatedAt().format(timeFormatter))
+                .toList();
+
+        List<Float> cpuUsages = logs.stream()
+                .map(ResourceLog::getCpuUsage)
+                .toList();
+
+        List<Float> ramUsages = logs.stream()
+                .map(ResourceLog::getRamUsage)
+                .toList();
+
+        // 5. Trả về DTO chuẩn
+        return new ResourceChartResponse(timestamps, cpuUsages, ramUsages);
     }
 }

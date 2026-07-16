@@ -1,12 +1,12 @@
 package com.be_paas.modules.deployment.service;
 
 import com.be_paas.core.exception.BusinessException;
+import com.be_paas.modules.monitoring.dto.ContainerStatsDTO;
 import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.BuildImageResultCallback;
 import com.github.dockerjava.api.command.CreateContainerResponse;
-import com.github.dockerjava.api.model.ExposedPort;
-import com.github.dockerjava.api.model.HostConfig;
-import com.github.dockerjava.api.model.Ports;
+import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.DockerClientConfig;
@@ -14,7 +14,6 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import com.github.dockerjava.api.model.Image;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -23,6 +22,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -239,6 +240,66 @@ public class DockerServiceImpl implements DockerService {
         } catch (Exception e) {
             log.warn("⚠️ Lỗi khi lấy kích thước Image {}: {}", imageName, e.getMessage());
             return 0L;
+        }
+    }
+
+    @Override
+    public ContainerStatsDTO getContainerStats(String containerId) {
+        CompletableFuture<Statistics> futureStats = new CompletableFuture<>();
+
+        try {
+            // Mở luồng stream đọc Stats từ Docker
+            dockerClient.statsCmd(containerId).exec(new ResultCallback.Adapter<Statistics>() {
+                @Override
+                public void onNext(Statistics stats) {
+                    futureStats.complete(stats); // Ném dữ liệu vào mảng chờ
+                    try {
+                        close(); // Đóng kết nối ngay lập tức, không cho Stream chảy tiếp
+                    } catch (Exception ignored) {}
+                }
+            });
+
+            // Đợi tối đa 3 giây để lấy dữ liệu, nếu không có thì ném lỗi
+            Statistics stats = futureStats.get(3, TimeUnit.SECONDS);
+
+            // ==========================================
+            // 1. TÍNH TOÁN RAM (Đổi từ Byte sang MB)
+            // ==========================================
+            Long memoryUsageBytes = stats.getMemoryStats().getUsage();
+            Float ramUsage = 0f;
+            if (memoryUsageBytes != null) {
+                // Chia chuẩn nhị phân (1024 * 1024) vì RAM máy tính đo bằng chuẩn này
+                ramUsage = Math.round((memoryUsageBytes / 1048576.0f) * 100.0f) / 100.0f;
+            }
+
+            // ==========================================
+            // 2. TÍNH TOÁN CPU (%)
+            // Công thức chuẩn của Docker: (cpuDelta / systemDelta) * số lượng Core * 100
+            // ==========================================
+            Float cpuUsage = 0f;
+            var cpuStats = stats.getCpuStats();
+            var preCpuStats = stats.getPreCpuStats();
+
+            if (cpuStats != null && preCpuStats != null) {
+                Long cpuDelta = cpuStats.getCpuUsage().getTotalUsage() - preCpuStats.getCpuUsage().getTotalUsage();
+                Long systemDelta = cpuStats.getSystemCpuUsage() - preCpuStats.getSystemCpuUsage();
+
+                if (systemDelta > 0 && cpuDelta > 0) {
+                    Long onlineCpus = cpuStats.getOnlineCpus();
+                    if (onlineCpus == null || onlineCpus == 0) {
+                        onlineCpus = (long) (cpuStats.getCpuUsage().getPercpuUsage() != null ? cpuStats.getCpuUsage().getPercpuUsage().size() : 1);
+                    }
+                    float cpuPercent = ((float) cpuDelta / (float) systemDelta) * onlineCpus * 100.0f;
+                    cpuUsage = Math.round(cpuPercent * 100.0f) / 100.0f;
+                }
+            }
+
+            return new ContainerStatsDTO(cpuUsage, ramUsage);
+
+        } catch (Exception e) {
+            log.warn("⚠️ Không thể đọc Stats của Container ID {}: {}", containerId, e.getMessage());
+            // Trả về 0 nếu có lỗi (Ví dụ: Container đang bị tắt)
+            return new ContainerStatsDTO(0f, 0f);
         }
     }
 }
