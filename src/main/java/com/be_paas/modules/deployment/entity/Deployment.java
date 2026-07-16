@@ -40,6 +40,9 @@ public class Deployment {
     @Column(name = "duong_dan_file")
     private String filePath;
 
+    @Column(name = "container_id", length = 64)
+    private String containerId;
+
     @Column(name = "thoi_gian_bat_dau")
     private LocalDateTime startTime;
 

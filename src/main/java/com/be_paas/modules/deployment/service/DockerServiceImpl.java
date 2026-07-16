@@ -250,17 +250,24 @@ public class DockerServiceImpl implements DockerService {
         try {
             // Mở luồng stream đọc Stats từ Docker
             dockerClient.statsCmd(containerId).exec(new ResultCallback.Adapter<Statistics>() {
+                private int tickCount = 0; // Biến đếm nhịp
+
                 @Override
                 public void onNext(Statistics stats) {
-                    futureStats.complete(stats); // Ném dữ liệu vào mảng chờ
-                    try {
-                        close(); // Đóng kết nối ngay lập tức, không cho Stream chảy tiếp
-                    } catch (Exception ignored) {}
+                    tickCount++;
+
+                    // Bỏ qua nhịp 1. Chỉ lấy dữ liệu từ nhịp 2 trở đi để có CPU Delta chính xác
+                    if (tickCount >= 2) {
+                        futureStats.complete(stats);
+                        try {
+                            close(); // Lấy xong nhịp 2 thì đóng kết nối
+                        } catch (Exception ignored) {}
+                    }
                 }
             });
 
-            // Đợi tối đa 3 giây để lấy dữ liệu, nếu không có thì ném lỗi
-            Statistics stats = futureStats.get(3, TimeUnit.SECONDS);
+            // Tăng thời gian chờ lên 5 giây (vì phải đợi Docker phát 2 nhịp, mỗi nhịp mất ~1 giây)
+            Statistics stats = futureStats.get(5, TimeUnit.SECONDS);
 
             // ==========================================
             // 1. TÍNH TOÁN RAM (Đổi từ Byte sang MB)
@@ -281,16 +288,28 @@ public class DockerServiceImpl implements DockerService {
             var preCpuStats = stats.getPreCpuStats();
 
             if (cpuStats != null && preCpuStats != null) {
-                Long cpuDelta = cpuStats.getCpuUsage().getTotalUsage() - preCpuStats.getCpuUsage().getTotalUsage();
-                Long systemDelta = cpuStats.getSystemCpuUsage() - preCpuStats.getSystemCpuUsage();
 
-                if (systemDelta > 0 && cpuDelta > 0) {
-                    Long onlineCpus = cpuStats.getOnlineCpus();
-                    if (onlineCpus == null || onlineCpus == 0) {
-                        onlineCpus = (long) (cpuStats.getCpuUsage().getPercpuUsage() != null ? cpuStats.getCpuUsage().getPercpuUsage().size() : 1);
+                // 1. Trích xuất các tham số ra (có thể bị null)
+                Long currentTotalUsage = (cpuStats.getCpuUsage() != null) ? cpuStats.getCpuUsage().getTotalUsage() : null;
+                Long preTotalUsage = (preCpuStats.getCpuUsage() != null) ? preCpuStats.getCpuUsage().getTotalUsage() : null;
+                Long currentSystemUsage = cpuStats.getSystemCpuUsage();
+                Long preSystemUsage = preCpuStats.getSystemCpuUsage();
+
+                // 2. LỚP PHÒNG THỦ: Phải đầy đủ 4 con số thì mới được trừ, nếu thiếu (null) thì bỏ qua, CPU = 0
+                if (currentTotalUsage != null && preTotalUsage != null && currentSystemUsage != null && preSystemUsage != null) {
+
+                    // Lúc này mới tính toán, Java không bị lỗi NullPointer khi unboxing nữa
+                    long cpuDelta = currentTotalUsage - preTotalUsage;
+                    long systemDelta = currentSystemUsage - preSystemUsage;
+
+                    if (systemDelta > 0 && cpuDelta > 0) {
+                        Long onlineCpus = cpuStats.getOnlineCpus();
+                        if (onlineCpus == null || onlineCpus == 0) {
+                            onlineCpus = (long) (cpuStats.getCpuUsage().getPercpuUsage() != null ? cpuStats.getCpuUsage().getPercpuUsage().size() : 1);
+                        }
+                        float cpuPercent = ((float) cpuDelta / (float) systemDelta) * onlineCpus * 100.0f;
+                        cpuUsage = Math.round(cpuPercent * 100.0f) / 100.0f;
                     }
-                    float cpuPercent = ((float) cpuDelta / (float) systemDelta) * onlineCpus * 100.0f;
-                    cpuUsage = Math.round(cpuPercent * 100.0f) / 100.0f;
                 }
             }
 

@@ -34,7 +34,6 @@ public class DeploymentServiceImpl implements DeploymentService {
     @Value("${app.bepaas.docker.container-prefix}")
     private String containerPrefix;
 
-
     private final ProjectRepository projectRepository;
     private final EnvironmentVariableRepository envVarRepository;
     private final DeploymentRepository deploymentRepository;
@@ -51,9 +50,8 @@ public class DeploymentServiceImpl implements DeploymentService {
         log.info("🚀 [Project {}] BẮT ĐẦU TIẾN TRÌNH DEPLOY NGẦM", projectId);
 
         Project project = null;
-        Deployment deployment = null; // Khai báo bên ngoài để có thể dùng trong khối catch
+        Deployment deployment = null;
 
-        // BAO TRỌN TOÀN BỘ CODE BẰNG TRY-CATCH
         try {
             log.info("⏳ [Project {}] Đang xác thực thông tin dự án...", projectId);
 
@@ -69,12 +67,12 @@ public class DeploymentServiceImpl implements DeploymentService {
             String patToken = project.getUser().getGithubAccessToken();
             if (patToken == null || patToken.isEmpty()) {
                 log.error("❌ [Project {}] Lỗi: User chưa liên kết GitHub", projectId);
-                updateProjectStatus(project, ProjectStatus.CRASHED, null, null);
+                updateProjectStatus(project, ProjectStatus.CRASHED, null);
                 return CompletableFuture.completedFuture(null);
             }
 
             // 2. Báo hiệu trạng thái Building cho Project
-            updateProjectStatus(project, ProjectStatus.BUILDING, null, null);
+            updateProjectStatus(project, ProjectStatus.BUILDING, null);
 
             // ========================================================
             // [MỞ SỔ LỊCH SỬ DEPLOYMENT]
@@ -84,14 +82,11 @@ public class DeploymentServiceImpl implements DeploymentService {
             deployment.setStatus(DeploymentStatus.BUILDING);
             deployment.setStartTime(LocalDateTime.now());
 
-            // Lưu lần 1 để DB sinh ID tự tăng
             deployment = deploymentRepository.save(deployment);
 
-            // Sinh chuỗi đường dẫn vật lý dựa trên ID vừa tạo
             String logFilePath = "/var/bepaas/logs/deploy_" + deployment.getId() + ".log";
             deployment.setFilePath(logFilePath);
 
-            // Lưu lần 2 để chốt đường dẫn
             deploymentRepository.save(deployment);
             log.info("📝 [Project {}] Đã khởi tạo hồ sơ Deploy ID: {}", projectId, deployment.getId());
             // ========================================================
@@ -99,7 +94,6 @@ public class DeploymentServiceImpl implements DeploymentService {
             // 3. Khởi tạo Workspace & Clone code
             log.info("📦 [Project {}] BƯỚC 1/4: Đang kéo mã nguồn từ GitHub (Branch: {})...", projectId, project.getBranch());
 
-            // HỨNG TRỌN VẸN ĐỐI TƯỢNG VÀO BIẾN WorkspaceResult
             WorkspaceResult workspaceResult = workspaceService.cloneRepository(
                     project.getId(),
                     project.getGithubUrl(),
@@ -109,7 +103,6 @@ public class DeploymentServiceImpl implements DeploymentService {
 
             Path workspacePath = workspaceResult.workspacePath();
 
-            // Xử lý thư mục gốc (Root Directory)
             String subDir = project.getRootDirectory();
             Path buildContextPath = (subDir != null && !subDir.trim().isEmpty())
                     ? workspacePath.resolve(subDir)
@@ -154,10 +147,13 @@ public class DeploymentServiceImpl implements DeploymentService {
             log.info("📊 [Project {}] Dung lượng Image (Tag {}): {} Bytes", projectId, imageName, imageSize);
 
             String containerId = dockerService.runContainer(imageId, containerName, internalPort, targetPort, buildContextPath);
+
+            // SỬA GẮT: Gán containerId cho Deployment thay vì Project
+            deployment.setContainerId(containerId);
             log.info("✅ [Project {}] Đã chạy thành công Container ID: {}", projectId, containerId);
 
             // 7. Hoàn tất (Cập nhật trạng thái Project hiện tại)
-            updateProjectStatus(project, ProjectStatus.RUNNING, containerId, internalPort);
+            updateProjectStatus(project, ProjectStatus.RUNNING, internalPort);
 
             // ========================================================
             // [CHỐT SỔ LỊCH SỬ THÀNH CÔNG]
@@ -168,7 +164,6 @@ public class DeploymentServiceImpl implements DeploymentService {
             deployment.setStatus(DeploymentStatus.SUCCESS);
             deployment.setEndTime(LocalDateTime.now());
 
-            // Cập nhật bản ghi triển khai lần cuối
             deploymentRepository.save(deployment);
             // ========================================================
 
@@ -179,18 +174,14 @@ public class DeploymentServiceImpl implements DeploymentService {
             log.error("🔥 [Project {}] LỖI CHÍ MẠNG KHI DEPLOY: {}", projectId, e.getMessage(), e);
 
             if (project != null) {
-                updateProjectStatus(project, ProjectStatus.CRASHED, null, null);
+                updateProjectStatus(project, ProjectStatus.CRASHED, null);
             }
 
-            // ========================================================
-            // [CHỐT SỔ LỊCH SỬ THẤT BẠI]
-            // ========================================================
             if (deployment != null) {
                 deployment.setStatus(DeploymentStatus.FAILED);
                 deployment.setEndTime(LocalDateTime.now());
                 deploymentRepository.save(deployment);
             }
-            // ========================================================
         }
 
         return CompletableFuture.completedFuture(null);
@@ -200,28 +191,27 @@ public class DeploymentServiceImpl implements DeploymentService {
     public void restartProject(Integer projectId, String username) {
         log.info("User {} yêu cầu Restart Project ID: {}", username, projectId);
 
-        // 1. Tìm dự án
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
-        // 2. Bảo mật: Xác thực quyền sở hữu tuyệt đối
         if (!project.getUser().getUsername().equals(username)) {
             log.warn("Cảnh báo xâm nhập: User {} cố tình Restart Project {} của User {}",
                     username, projectId, project.getUser().getUsername());
             throw new BusinessException(403, "Bạn không có quyền thao tác trên dự án này");
         }
 
-        // 3. Validate logic: Dự án đã từng Deploy chưa?
-        String containerId = project.getContainerId();
+        // SỬA GẮT: Tìm ID từ bản Deploy SUCCESS gần nhất
+        Deployment latestDeploy = deploymentRepository
+                .findFirstByProjectIdAndStatusOrderByIdDesc(projectId, DeploymentStatus.SUCCESS)
+                .orElseThrow(() -> new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể Restart."));
+
+        String containerId = latestDeploy.getContainerId();
         if (containerId == null || containerId.trim().isEmpty()) {
-            throw new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể Restart.");
+            throw new BusinessException(400, "Không tìm thấy Container ID hợp lệ để khởi động lại.");
         }
 
-        // 4. Thực thi Restart
         dockerService.restartContainer(containerId);
 
-        // 5. Đồng bộ trạng thái DB
-        // Nếu dự án đang bị STOPPED hoặc CRASHED, sau khi restart thành công phải đổi lại thành RUNNING
         if (project.getStatus() != ProjectStatus.RUNNING) {
             project.setStatus(ProjectStatus.RUNNING);
             projectRepository.save(project);
@@ -233,27 +223,27 @@ public class DeploymentServiceImpl implements DeploymentService {
     public void stopProject(Integer projectId, String username) {
         log.info("User {} yêu cầu Stop Project ID: {}", username, projectId);
 
-        // 1. Tìm dự án
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
-        // 2. Bảo mật: Xác thực quyền sở hữu
         if (!project.getUser().getUsername().equals(username)) {
             log.warn("Cảnh báo xâm nhập: User {} cố tình Stop Project {} của User {}",
                     username, projectId, project.getUser().getUsername());
             throw new BusinessException(403, "Bạn không có quyền thao tác trên dự án này");
         }
 
-        // 3. Validate logic: Đã có Container chưa
-        String containerId = project.getContainerId();
+        // SỬA GẮT: Tìm ID từ bản Deploy SUCCESS gần nhất
+        Deployment latestDeploy = deploymentRepository
+                .findFirstByProjectIdAndStatusOrderByIdDesc(projectId, DeploymentStatus.SUCCESS)
+                .orElseThrow(() -> new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể dừng."));
+
+        String containerId = latestDeploy.getContainerId();
         if (containerId == null || containerId.trim().isEmpty()) {
-            throw new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể dừng.");
+            throw new BusinessException(400, "Không tìm thấy Container ID hợp lệ để dừng.");
         }
 
-        // 4. Gọi Docker API để dừng
         dockerService.stopContainer(containerId);
 
-        // 5. Cập nhật trạng thái xuống Database
         if (project.getStatus() != ProjectStatus.STOPPED) {
             project.setStatus(ProjectStatus.STOPPED);
             projectRepository.save(project);
@@ -265,27 +255,27 @@ public class DeploymentServiceImpl implements DeploymentService {
     public void startProject(Integer projectId, String username) {
         log.info("User {} yêu cầu Start Project ID: {}", username, projectId);
 
-        // 1. Tìm dự án
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
-        // 2. Bảo mật: Xác thực quyền sở hữu
         if (!project.getUser().getUsername().equals(username)) {
             log.warn("Cảnh báo xâm nhập: User {} cố tình Start Project {} của User {}",
                     username, projectId, project.getUser().getUsername());
             throw new BusinessException(403, "Bạn không có quyền thao tác trên dự án này");
         }
 
-        // 3. Validate logic: Đã có Container chưa
-        String containerId = project.getContainerId();
+        // SỬA GẮT: Tìm ID từ bản Deploy SUCCESS gần nhất
+        Deployment latestDeploy = deploymentRepository
+                .findFirstByProjectIdAndStatusOrderByIdDesc(projectId, DeploymentStatus.SUCCESS)
+                .orElseThrow(() -> new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể khởi động."));
+
+        String containerId = latestDeploy.getContainerId();
         if (containerId == null || containerId.trim().isEmpty()) {
-            throw new BusinessException(400, "Dự án chưa được khởi tạo môi trường (chưa Deploy lần nào) nên không thể khởi động.");
+            throw new BusinessException(400, "Không tìm thấy Container ID hợp lệ để khởi động.");
         }
 
-        // 4. Gọi Docker API để khởi động
         dockerService.startContainer(containerId);
 
-        // 5. Cập nhật trạng thái xuống Database
         if (project.getStatus() != ProjectStatus.RUNNING) {
             project.setStatus(ProjectStatus.RUNNING);
             projectRepository.save(project);
@@ -294,13 +284,11 @@ public class DeploymentServiceImpl implements DeploymentService {
     }
 
     /**
-     * Hàm phụ trợ lưu trạng thái vào DB.
-     * Lưu độc lập để không giữ Transaction kéo dài.
+     * Hàm phụ trợ lưu trạng thái vào DB
      */
-    private void updateProjectStatus(Project project, ProjectStatus status, String containerId, Integer port) {
+    private void updateProjectStatus(Project project, ProjectStatus status, Integer port) {
         project.setStatus(status);
         project.setLastHealthCheck(LocalDateTime.now());
-        if (containerId != null) project.setContainerId(containerId);
         if (port != null) project.setInternalPort(port);
         projectRepository.save(project);
     }

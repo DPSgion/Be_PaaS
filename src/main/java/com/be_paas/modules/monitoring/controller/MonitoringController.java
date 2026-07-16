@@ -4,12 +4,14 @@ import com.be_paas.modules.monitoring.dto.ProjectMetricsResponse;
 import com.be_paas.modules.monitoring.dto.ResourceChartResponse;
 import com.be_paas.modules.monitoring.service.MonitoringService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -40,5 +42,14 @@ public class MonitoringController {
         List<ResourceChartResponse> response = monitoringService.getResourceChart(projectId, username);
 
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping(value = "/projects/{projectId}/metrics/chart/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamResourceChart(
+            @PathVariable Integer projectId,
+            Authentication authentication) {
+
+        String username = authentication.getName();
+        return monitoringService.subscribe(projectId, username);
     }
 }

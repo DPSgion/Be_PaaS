@@ -1,9 +1,14 @@
 package com.be_paas.modules.monitoring.scheduler;
 
+import com.be_paas.modules.deployment.entity.Deployment;
+import com.be_paas.modules.deployment.entity.DeploymentStatus;
+import com.be_paas.modules.deployment.repository.DeploymentRepository;
 import com.be_paas.modules.deployment.service.DockerService;
 import com.be_paas.modules.monitoring.dto.ContainerStatsDTO;
+import com.be_paas.modules.monitoring.dto.ResourceChartResponse;
 import com.be_paas.modules.monitoring.entity.ResourceLog;
 import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
+import com.be_paas.modules.monitoring.service.MonitoringService;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.repository.ProjectRepository;
@@ -14,7 +19,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -24,6 +31,8 @@ public class ResourceMonitorScheduler {
     private final ProjectRepository projectRepository;
     private final DockerService dockerService;
     private final ResourceLogRepository resourceLogRepository;
+    private final DeploymentRepository deploymentRepository;
+    private final MonitoringService monitoringService;
 
     /**
      * Luồng 1: Thu thập dữ liệu
@@ -35,12 +44,20 @@ public class ResourceMonitorScheduler {
         List<Project> runningProjects = projectRepository.findByStatus(ProjectStatus.RUNNING);
 
         for (Project project : runningProjects) {
-            String containerId = project.getContainerId();
-            if (containerId == null || containerId.trim().isEmpty()) {
-                continue;
-            }
-
             try {
+                // SỬA GẮT 2: Truy tìm Container ID từ lịch sử Deploy thành công gần nhất
+                Optional<Deployment> latestDeploy = deploymentRepository
+                        .findFirstByProjectIdAndStatusOrderByIdDesc(project.getId(), DeploymentStatus.SUCCESS);
+
+                // Nếu không có lịch sử deploy hoặc containerId trống thì bỏ qua
+                if (latestDeploy.isEmpty() ||
+                        latestDeploy.get().getContainerId() == null ||
+                        latestDeploy.get().getContainerId().trim().isEmpty()) {
+                    continue;
+                }
+
+                String containerId = latestDeploy.get().getContainerId();
+
                 // Gọi sang DockerService để lấy chỉ số snapshot
                 ContainerStatsDTO stats = dockerService.getContainerStats(containerId);
 
@@ -51,6 +68,16 @@ public class ResourceMonitorScheduler {
                 logRecord.setRamUsage(stats.ramUsage());
 
                 resourceLogRepository.save(logRecord);
+
+                // Đóng gói dữ liệu để phát đi
+                ResourceChartResponse liveData = new ResourceChartResponse(
+                        logRecord.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm:ss")),
+                        logRecord.getCpuUsage(),
+                        logRecord.getRamUsage()
+                );
+
+                // BƠM VÀO ỐNG SSE ĐANG CHỜ
+                monitoringService.sendChartData(project.getId(), liveData);
 
             } catch (Exception e) {
                 log.error("⚠️ Không thể thu thập tài nguyên cho Project ID {}: {}", project.getId(), e.getMessage());

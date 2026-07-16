@@ -51,9 +51,6 @@ public class Project {
     @Column(name = "kiem_tra_sk_gan_nhat")
     private LocalDateTime lastHealthCheck;
 
-    @Column(name = "container_id", length = 64)
-    private String containerId;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "trang_thai", nullable = false)
     private ProjectStatus status;

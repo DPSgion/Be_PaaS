@@ -35,6 +35,7 @@ public class JwtFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
+        // SỬA GẮT: Cập nhật hàm gọi trích xuất token đa luồng
         String token = extractTokenFromCookie(request);
 
         if (token != null && jwtService.isTokenValid(token)) {
@@ -43,7 +44,6 @@ public class JwtFilter extends OncePerRequestFilter {
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 User userFromDb = userRepository.findByUsername(username).orElse(null);
-
 
                 if (userFromDb != null &&
                         userFromDb.getStatus() != UserStatus.BANNED &&
@@ -69,6 +69,7 @@ public class JwtFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    // Trả file JwtFilter về nguyên bản, CHỈ ĐỌC COOKIE
     private String extractTokenFromCookie(HttpServletRequest request) {
         if (request.getCookies() == null) return null;
 
