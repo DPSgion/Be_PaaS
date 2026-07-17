@@ -2,11 +2,17 @@ package com.be_paas.modules.project.controller;
 
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.Project;
+import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.service.ProjectService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
@@ -90,5 +96,23 @@ public class ProjectController {
         projectService.updateProjectSettings(projectId, request, currentUsername);
 
         return ResponseEntity.ok("Cập nhật cấu hình dự án thành công. Bạn cần Deploy lại để áp dụng thay đổi.");
+    }
+
+    @GetMapping("/admin")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
+    public ResponseEntity<Page<AdminProjectListResponse>> getAllProjectsForAdmin(
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String developer,
+            @RequestParam(required = false) ProjectStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        // Cấu hình phân trang: Sắp xếp theo ngày tạo mới nhất (giống như Dashboard yêu cầu)
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+
+        // Gọi xuống Service
+        Page<AdminProjectListResponse> result = projectService.getAdminProjects(projectName, developer, status, pageable);
+
+        return ResponseEntity.ok(result);
     }
 }

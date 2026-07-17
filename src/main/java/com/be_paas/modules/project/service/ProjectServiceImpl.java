@@ -2,6 +2,7 @@ package com.be_paas.modules.project.service;
 
 import com.be_paas.core.config.AESUtil;
 import com.be_paas.core.exception.BusinessException;
+import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
 import com.be_paas.modules.project.entity.Project;
@@ -12,6 +13,8 @@ import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +29,7 @@ public class ProjectServiceImpl implements ProjectService {
     private final UserRepository userRepository;
     private final EnvironmentVariableRepository envVarRepository;
     private final AESUtil aesUtil;
+    private final ResourceLogRepository resourceLogRepository;
 
     @Override
     @Transactional
@@ -208,6 +212,38 @@ public class ProjectServiceImpl implements ProjectService {
         // 4. Lưu xuống Database
         projectRepository.save(project);
         log.info("Cập nhật thành công cấu hình cho Project ID: {}", projectId);
+    }
+
+    @Override
+    public Page<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable) {
+        // 1. Quét danh sách dự án kèm phân trang và bộ lọc
+        Page<Project> projects = projectRepository.findProjectsForAdmin(projectName, status, developer, pageable);
+
+        // 2. Chuyển đổi Entity sang DTO và đắp số liệu CPU/RAM
+        return projects.map(project -> {
+            Float cpu = null;
+            Float ram = null;
+
+            // Chặn N+1 Query: Chỉ lấy số liệu nếu dự án đang RUNNING
+            if (ProjectStatus.RUNNING.equals(project.getStatus())) {
+                var latestLog = resourceLogRepository.findFirstByProjectIdOrderByCreatedAtDesc(project.getId());
+                if (latestLog.isPresent()) {
+                    cpu = latestLog.get().getCpuUsage();
+                    ram = latestLog.get().getRamUsage();
+                }
+            }
+
+            return new AdminProjectListResponse(
+                    project.getId(),
+                    project.getProjectName(),
+                    project.getUser().getUsername(),
+                    project.getBranch(),
+                    project.getSubdomain(),
+                    project.getStatus(),
+                    cpu,
+                    ram
+            );
+        });
     }
 
 

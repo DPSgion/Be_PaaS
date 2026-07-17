@@ -2,6 +2,9 @@ package com.be_paas.modules.project.service;
 
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.Project;
+import com.be_paas.modules.project.entity.ProjectStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
@@ -17,4 +20,6 @@ public interface ProjectService {
     List<EnvVarResponse> getEnvironmentVariables(Integer projectId, String username);
 
     void updateProjectSettings(Integer projectId, ProjectUpdateRequest request, String username);
+
+    Page<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable);
 }

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface ResourceLogRepository extends JpaRepository<ResourceLog, Long> {
@@ -20,4 +21,6 @@ public interface ResourceLogRepository extends JpaRepository<ResourceLog, Long> 
     @Modifying
     @Query("DELETE FROM ResourceLog r WHERE r.createdAt < :threshold")
     void deleteOlderThan(@Param("threshold") LocalDateTime threshold);
+
+    Optional<ResourceLog> findFirstByProjectIdOrderByCreatedAtDesc(Integer projectId);
 }

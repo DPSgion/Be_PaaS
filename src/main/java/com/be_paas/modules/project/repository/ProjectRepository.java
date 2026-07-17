@@ -2,6 +2,8 @@ package com.be_paas.modules.project.repository;
 
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,4 +28,17 @@ public interface ProjectRepository extends JpaRepository<Project, Integer> {
 
     // Lấy danh sách dự án theo trạng thái
     List<Project> findByStatus(ProjectStatus status);
+
+    @Query("SELECT p FROM Project p JOIN p.user u WHERE p.isDeleted = false " +
+            "AND (:projectName IS NULL OR LOWER(p.projectName) LIKE LOWER(CONCAT('%', :projectName, '%'))) " +
+            "AND (:status IS NULL OR p.status = :status) " +
+            "AND (:developer IS NULL OR LOWER(u.username) LIKE LOWER(CONCAT('%', :developer, '%')) " +
+            "    OR LOWER(u.email) LIKE LOWER(CONCAT('%', :developer, '%')) " +
+            "    OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', :developer, '%')))")
+    Page<Project> findProjectsForAdmin(
+            @Param("projectName") String projectName,
+            @Param("status") ProjectStatus status,
+            @Param("developer") String developer,
+            Pageable pageable
+    );
 }
