@@ -21,7 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -40,48 +42,55 @@ public class ResourceMonitorScheduler {
      */
     @Scheduled(fixedRate = 30000)
     public void collectResourceStats() {
-        // Chỉ quét những dự án đang RUNNING
+        // 1. Quét danh sách dự án (Nhanh, giải phóng connection ngay)
         List<Project> runningProjects = projectRepository.findByStatus(ProjectStatus.RUNNING);
 
-        for (Project project : runningProjects) {
+        if (runningProjects.isEmpty()) {
+            return;
+        }
+
+        // 2. CHẠY SONG SONG (Parallel Stream) để không bị kẹt 5 giây/dự án
+        List<ResourceLog> logsToSave = runningProjects.parallelStream().map(project -> {
             try {
-                // SỬA GẮT 2: Truy tìm Container ID từ lịch sử Deploy thành công gần nhất
+                // Lấy ID từ lịch sử Deploy (DB I/O nhỏ)
                 Optional<Deployment> latestDeploy = deploymentRepository
                         .findFirstByProjectIdAndStatusOrderByIdDesc(project.getId(), DeploymentStatus.SUCCESS);
 
-                // Nếu không có lịch sử deploy hoặc containerId trống thì bỏ qua
-                if (latestDeploy.isEmpty() ||
-                        latestDeploy.get().getContainerId() == null ||
-                        latestDeploy.get().getContainerId().trim().isEmpty()) {
-                    continue;
+                if (latestDeploy.isEmpty() || latestDeploy.get().getContainerId() == null || latestDeploy.get().getContainerId().trim().isEmpty()) {
+                    return null; // Bỏ qua nếu không có container
                 }
 
                 String containerId = latestDeploy.get().getContainerId();
 
-                // Gọi sang DockerService để lấy chỉ số snapshot
+                // GỌI DOCKER (Mất 5 giây nhưng các dự án đang chạy song song nên không lo kẹt)
                 ContainerStatsDTO stats = dockerService.getContainerStats(containerId);
 
-                // Tạo bản ghi mới và lưu xuống DB
+                // Khởi tạo bản ghi
                 ResourceLog logRecord = new ResourceLog();
                 logRecord.setProject(project);
                 logRecord.setCpuUsage(stats.cpuUsage());
                 logRecord.setRamUsage(stats.ramUsage());
 
-                resourceLogRepository.save(logRecord);
-
-                // Đóng gói dữ liệu để phát đi
+                // Đóng gói và bơm vào ống SSE ngay lập tức cho Frontend thấy độ trễ thấp nhất
                 ResourceChartResponse liveData = new ResourceChartResponse(
-                        logRecord.getCreatedAt().format(DateTimeFormatter.ofPattern("HH:mm:ss")),
-                        logRecord.getCpuUsage(),
-                        logRecord.getRamUsage()
+                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")),
+                        stats.cpuUsage(),
+                        stats.ramUsage()
                 );
-
-                // BƠM VÀO ỐNG SSE ĐANG CHỜ
                 monitoringService.sendChartData(project.getId(), liveData);
+
+                return logRecord; // Trả về đối tượng để gom vào List
 
             } catch (Exception e) {
                 log.error("⚠️ Không thể thu thập tài nguyên cho Project ID {}: {}", project.getId(), e.getMessage());
+                return null;
             }
+        }).filter(Objects::nonNull).collect(Collectors.toList()); // Lọc bỏ các dự án lỗi (null)
+
+        // 3. LƯU BATCH (Lưu 1 cục vào DB)
+        // Giải phóng áp lực hoàn toàn cho Hikari Connection Pool vì chỉ gọi DB đúng 1 lần
+        if (!logsToSave.isEmpty()) {
+            resourceLogRepository.saveAll(logsToSave);
         }
     }
 
