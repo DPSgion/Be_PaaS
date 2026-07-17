@@ -466,13 +466,22 @@ public class DeploymentServiceImpl implements DeploymentService {
                 durationStr = "Building...";
             }
 
+            // Xử lý Image Size (Từ Bytes -> MB)
+            String formattedImageSize = "--";
+            if (dep.getImageSize() != null && dep.getImageSize() > 0) {
+                // Chia 1024 * 1024 để ra MB, dùng double để lấy số thập phân
+                double sizeInMb = dep.getImageSize() / 1048576.0;
+                formattedImageSize = String.format("%.2f MB", sizeInMb); // Làm tròn 2 chữ số thập phân
+            }
+
             return new DeploymentHistoryResponse(
                     dep.getId(),
                     dep.getStartTime(),
                     durationStr,
                     dep.getStatus(),
                     dep.getCommitSha(),
-                    formattedMessage
+                    formattedMessage,
+                    formattedImageSize
             );
         });
 

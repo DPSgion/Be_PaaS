@@ -1,5 +1,7 @@
 package com.be_paas.modules.deployment.service;
 
+import com.be_paas.modules.monitoring.dto.ContainerStatsDTO;
+
 import java.nio.file.Path;
 
 public interface DockerService {
@@ -58,5 +60,5 @@ public interface DockerService {
     /**
      * Lấy chỉ số CPU và RAM hiện thời của Container (Snapshot 1 lần)
      */
-    com.be_paas.modules.monitoring.dto.ContainerStatsDTO getContainerStats(String containerId);
+    ContainerStatsDTO getContainerStats(String containerId);
 }

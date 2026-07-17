@@ -9,5 +9,6 @@ public record DeploymentHistoryResponse(
         String buildDuration,
         DeploymentStatus status,
         String commitSha,
-        String commitMessage
+        String commitMessage,
+        String imageSize // Định dạng sẵn luôn, ví dụ: 238.92 MB
 ) {}
