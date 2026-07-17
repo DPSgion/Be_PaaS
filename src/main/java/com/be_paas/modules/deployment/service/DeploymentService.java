@@ -1,5 +1,10 @@
 package com.be_paas.modules.deployment.service;
 
+import com.be_paas.core.response.PageResponse;
+import com.be_paas.modules.deployment.dto.DeploymentHistoryResponse;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface DeploymentService {
@@ -23,4 +28,9 @@ public interface DeploymentService {
      * Xử lý yêu cầu khởi động dự án của User
      */
     void startProject(Integer projectId, String username);
+
+    String getDeploymentLog(Integer deploymentId, String username);
+    SseEmitter streamDeploymentLog(Integer deploymentId, String username);
+
+    PageResponse<DeploymentHistoryResponse> getProjectDeployHistories(Integer projectId, String username, int page, int size);
 }

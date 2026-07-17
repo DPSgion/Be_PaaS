@@ -2,6 +2,8 @@ package com.be_paas.modules.deployment.service;
 
 import com.be_paas.core.config.AESUtil;
 import com.be_paas.core.exception.BusinessException;
+import com.be_paas.core.response.PageResponse;
+import com.be_paas.modules.deployment.dto.DeploymentHistoryResponse;
 import com.be_paas.modules.deployment.dto.WorkspaceResult;
 import com.be_paas.modules.deployment.entity.Deployment;
 import com.be_paas.modules.deployment.entity.DeploymentStatus;
@@ -14,14 +16,25 @@ import com.be_paas.modules.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -43,6 +56,10 @@ public class DeploymentServiceImpl implements DeploymentService {
     private final DockerService dockerService;
     private final AESUtil aesUtil;
 
+
+    @Value("${app.deployment.log-dir}")
+    private String logDirectory;
+
     @Override
     @Async("taskExecutor")
     public CompletableFuture<Void> deployProject(Integer projectId, String username) {
@@ -51,6 +68,7 @@ public class DeploymentServiceImpl implements DeploymentService {
 
         Project project = null;
         Deployment deployment = null;
+        String logFilePath = null; // Khai báo ra ngoài để catch block có thể dùng được
 
         try {
             log.info("⏳ [Project {}] Đang xác thực thông tin dự án...", projectId);
@@ -75,24 +93,25 @@ public class DeploymentServiceImpl implements DeploymentService {
             updateProjectStatus(project, ProjectStatus.BUILDING, null);
 
             // ========================================================
-            // [MỞ SỔ LỊCH SỬ DEPLOYMENT]
+            // [MỞ SỔ LỊCH SỬ DEPLOYMENT & KHỞI TẠO FILE LOG]
             // ========================================================
             deployment = new Deployment();
             deployment.setProjectId(projectId);
             deployment.setStatus(DeploymentStatus.BUILDING);
             deployment.setStartTime(LocalDateTime.now());
-
             deployment = deploymentRepository.save(deployment);
 
-            String logFilePath = "/var/bepaas/logs/deploy_" + deployment.getId() + ".log";
+            logFilePath = logDirectory + "/deploy_" + deployment.getId() + ".log";
             deployment.setFilePath(logFilePath);
-
             deploymentRepository.save(deployment);
+
+            writeDeployLog(logFilePath, "🚀 STARTING DEPLOYMENT PROCESS FOR PROJECT ID: " + project.getId());
             log.info("📝 [Project {}] Đã khởi tạo hồ sơ Deploy ID: {}", projectId, deployment.getId());
             // ========================================================
 
             // 3. Khởi tạo Workspace & Clone code
             log.info("📦 [Project {}] BƯỚC 1/4: Đang kéo mã nguồn từ GitHub (Branch: {})...", projectId, project.getBranch());
+            writeDeployLog(logFilePath, "⏳ Connecting to GitHub to clone repository (Branch: " + project.getBranch() + ")...");
 
             WorkspaceResult workspaceResult = workspaceService.cloneRepository(
                     project.getId(),
@@ -101,6 +120,7 @@ public class DeploymentServiceImpl implements DeploymentService {
                     patToken
             );
 
+            writeDeployLog(logFilePath, "✅ Source code cloned successfully. Target Commit: " + workspaceResult.commitSha());
             Path workspacePath = workspaceResult.workspacePath();
 
             String subDir = project.getRootDirectory();
@@ -110,6 +130,8 @@ public class DeploymentServiceImpl implements DeploymentService {
 
             // 4. Tiêm Biến môi trường
             log.info("⚙️ [Project {}] BƯỚC 2/4: Đang tiêm biến môi trường (.env)...", projectId);
+            writeDeployLog(logFilePath, "⚙️ Reading configuration and injecting environment variables (.env)...");
+
             List<EnvironmentVariable> envVars = envVarRepository.findByProjectId(projectId);
             Map<String, String> envMap = envVars.stream()
                     .collect(Collectors.toMap(
@@ -117,16 +139,20 @@ public class DeploymentServiceImpl implements DeploymentService {
                             env -> aesUtil.decrypt(env.getValue())
                     ));
             workspaceService.generateEnvFile(buildContextPath, envMap);
+            writeDeployLog(logFilePath, "✅ Environment setup completed (" + envMap.size() + " variables injected).");
 
             // 5. Cấp phát Cổng động
             log.info("🔌 [Project {}] BƯỚC 3/4: Đang kiểm tra cổng mạng nội bộ...", projectId);
-            Integer internalPort = project.getInternalPort();
+            writeDeployLog(logFilePath, "🔌 Allocating internal network port...");
 
+            Integer internalPort = project.getInternalPort();
             if (internalPort == null) {
                 internalPort = portManagerService.allocateAvailablePort();
                 log.info("🔌 [Project {}] Cấp phát port mới: {}", projectId, internalPort);
+                writeDeployLog(logFilePath, "🔌 Allocated new port: " + internalPort);
             } else {
                 log.info("🔌 [Project {}] Tái sử dụng port cũ: {}", projectId, internalPort);
+                writeDeployLog(logFilePath, "🔌 Reusing existing port: " + internalPort);
             }
 
             // 6. Đóng gói & Chạy Docker
@@ -135,22 +161,27 @@ public class DeploymentServiceImpl implements DeploymentService {
             String containerName = containerPrefix + project.getId();
 
             log.info("🧹 [Project {}] Đang dọn dẹp Container và Image cũ (nếu có)...", projectId);
+            writeDeployLog(logFilePath, "🧹 Cleaning up old containers and images to prevent conflicts...");
             dockerService.cleanupContainerAndImage(containerName, imageName);
 
             Integer targetPort = project.getTargetPort() != null ? project.getTargetPort() : 80;
 
+            writeDeployLog(logFilePath, "🐳 Executing Docker Build. This process may take a few minutes...");
             String imageId = dockerService.buildImage(buildContextPath, imageName);
             log.info("✅ [Project {}] Đã build xong Image ID: {}", projectId, imageId);
+            writeDeployLog(logFilePath, "✅ Docker Build successful. Generated Image ID: " + imageId);
 
             Long imageSize = dockerService.getImageSize(imageName);
             deployment.setImageSize(imageSize);
             log.info("📊 [Project {}] Dung lượng Image (Tag {}): {} Bytes", projectId, imageName, imageSize);
+            writeDeployLog(logFilePath, "📊 Optimized Image Size: " + (imageSize / 1024 / 1024) + " MB");
 
+            writeDeployLog(logFilePath, "🚀 Starting Docker Container...");
             String containerId = dockerService.runContainer(imageId, containerName, internalPort, targetPort, buildContextPath);
 
-            // SỬA GẮT: Gán containerId cho Deployment thay vì Project
             deployment.setContainerId(containerId);
             log.info("✅ [Project {}] Đã chạy thành công Container ID: {}", projectId, containerId);
+            writeDeployLog(logFilePath, "✅ Container started successfully. Container ID: " + containerId);
 
             // 7. Hoàn tất (Cập nhật trạng thái Project hiện tại)
             updateProjectStatus(project, ProjectStatus.RUNNING, internalPort);
@@ -163,8 +194,10 @@ public class DeploymentServiceImpl implements DeploymentService {
             deployment.setCommitter(workspaceResult.committer());
             deployment.setStatus(DeploymentStatus.SUCCESS);
             deployment.setEndTime(LocalDateTime.now());
-
             deploymentRepository.save(deployment);
+
+            writeDeployLog(logFilePath, "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY! Application is running on Port: " + internalPort);
+            writeDeployLog(logFilePath, "[SYSTEM_CODE:DEPLOYMENT_SUCCESS]");
             // ========================================================
 
             log.info("🎉 [Project {}] HOÀN TẤT DEPLOY! Ứng dụng đang chạy ở Port: {}", projectId, internalPort);
@@ -172,6 +205,13 @@ public class DeploymentServiceImpl implements DeploymentService {
 
         } catch (Exception e) {
             log.error("🔥 [Project {}] LỖI CHÍ MẠNG KHI DEPLOY: {}", projectId, e.getMessage(), e);
+
+            // Ghi thẳng lỗi chí mạng vào file log cho người dùng nắm bắt
+            if (logFilePath != null) {
+                writeDeployLog(logFilePath, "❌ CRITICAL ERROR DURING DEPLOYMENT: " + e.getMessage());
+                writeDeployLog(logFilePath, "🛑 Deployment process aborted.");
+                writeDeployLog(logFilePath, "[SYSTEM_CODE:DEPLOYMENT_FAILED]");
+            }
 
             if (project != null) {
                 updateProjectStatus(project, ProjectStatus.CRASHED, null);
@@ -283,6 +323,203 @@ public class DeploymentServiceImpl implements DeploymentService {
         }
     }
 
+    @Override
+    public SseEmitter streamDeploymentLog(Integer deploymentId, String username) {
+        log.info("User {} yêu cầu xem Live Log SSE của Deployment ID: {}", username, deploymentId);
+
+        // ========================================================
+        // 1. XÁC THỰC & PHÂN QUYỀN (CHỐT CHẶN VÒNG NGOÀI)
+        // ========================================================
+        Deployment deployment = deploymentRepository.findById(deploymentId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy bản ghi triển khai"));
+
+        Project project = projectRepository.findById(deployment.getProjectId())
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án liên kết"));
+
+        if (!project.getUser().getUsername().equals(username)) {
+            log.warn("🚨 Cảnh báo xâm nhập: User {} cố tình nghe lén log Live của Deployment ID {}", username, deploymentId);
+            throw new BusinessException(403, "Bạn không có quyền xem log của dự án này");
+        }
+
+        String filePath = deployment.getFilePath();
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new BusinessException(400, "Đường dẫn file log không hợp lệ.");
+        }
+
+        // ========================================================
+        // 2. KHỞI TẠO LUỒNG SSE & CỜ HIỆU AN TOÀN
+        // ========================================================
+        SseEmitter emitter = new SseEmitter(0L); // Timeout 0: Không bao giờ tự ngắt
+
+        // Biến cờ hiệu an toàn luồng (State Flag)
+        AtomicBoolean isClientConnected = new AtomicBoolean(true);
+
+        // Gắn Callback: Nếu trình duyệt tắt, ngắt mạng, hoặc timeout -> Đổi cờ thành false
+        Runnable onClientDisconnect = () -> isClientConnected.set(false);
+        emitter.onCompletion(onClientDisconnect);
+        emitter.onTimeout(onClientDisconnect);
+        emitter.onError((e) -> onClientDisconnect.run());
+
+        // ========================================================
+        // 3. THỰC THI QUÉT FILE THEO THỜI GIAN THỰC (TAIL -F)
+        // ========================================================
+        CompletableFuture.runAsync(() -> {
+            try (RandomAccessFile reader = new RandomAccessFile(filePath, "r")) {
+                long filePointer = 0;
+                long lastPingTime = System.currentTimeMillis(); // THÊM GẮT: Ghi nhớ lần ping cuối
+
+                // CHỈ TIẾP TỤC VÒNG LẶP KHI CLIENT CÒN KẾT NỐI
+                while (isClientConnected.get()) {
+                    long fileLength = reader.length();
+
+                    if (fileLength > filePointer) {
+                        // 3.1 CÓ DỮ LIỆU MỚI: Đọc và bơm xuống Frontend
+                        reader.seek(filePointer);
+                        String line;
+
+                        while ((line = reader.readLine()) != null) {
+                            String utf8Line = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+
+                            if (utf8Line.contains("[SYSTEM_CODE:DEPLOYMENT_SUCCESS]") ||
+                                    utf8Line.contains("[SYSTEM_CODE:DEPLOYMENT_FAILED]")) {
+                                emitter.send(SseEmitter.event().name("EOF").data("END_OF_STREAM"));
+                                emitter.complete();
+                                return;
+                            }
+
+                            emitter.send(SseEmitter.event().name("log").data(utf8Line));
+                            filePointer = reader.getFilePointer();
+                        }
+                    } else {
+                        // 3.2 RẢNH RỖI: Kiểm tra xem đã qua 15 giây kể từ lần ping trước chưa
+                        long now = System.currentTimeMillis();
+                        if (now - lastPingTime > 15000) { // 15000ms = 15 giây
+                            try {
+                                emitter.send(SseEmitter.event().name("ping").data("keep-alive"));
+                                lastPingTime = now; // Cập nhật lại thời gian ping
+                            } catch (Exception pingEx) {
+                                // Client đã ngắt kết nối âm thầm -> Lật cờ và phá vòng lặp
+                                isClientConnected.set(false);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Tiết kiệm CPU, vẫn ngủ nửa giây để không vắt kiệt chip
+                    Thread.sleep(500);
+                }
+
+                log.info("✅ Client ngắt kết nối, đã dọn dẹp an toàn luồng đọc file log Deployment ID: {}", deploymentId);
+
+            } catch (Exception e) {
+                if (isClientConnected.get()) {
+                    log.error("🔥 Lỗi chí mạng trong luồng SSE khi đọc Live Log {}: {}", filePath, e.getMessage());
+                    emitter.completeWithError(e);
+                }
+            }
+        });
+
+        return emitter;
+    }
+
+    @Override
+    public PageResponse<DeploymentHistoryResponse> getProjectDeployHistories(Integer projectId, String username, int page, int size) {
+        log.info("User {} yêu cầu xem lịch sử Deploy của Project ID: {} (Page: {})", username, projectId, page);
+
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        if (!project.getUser().getUsername().equals(username)) {
+            throw new BusinessException(403, "Bạn không có quyền xem lịch sử của dự án này");
+        }
+
+        // 1. Tạo đối tượng Pageable (Mặc định sort đã được xử lý ở tên hàm Repository)
+        Pageable pageable = PageRequest.of(page, size);
+
+        // 2. Lấy dữ liệu phân trang từ DB
+        Page<Deployment> deploymentPage = deploymentRepository.findByProjectIdOrderByIdDesc(projectId, pageable);
+
+        // 3. Map Entity sang DTO trực tiếp trên đối tượng Page
+        Page<DeploymentHistoryResponse> responsePage = deploymentPage.map(dep -> {
+            String formattedMessage = dep.getCommitMessage();
+            if (formattedMessage != null && !formattedMessage.trim().isEmpty()) {
+                formattedMessage = formattedMessage.split("\n")[0].trim();
+                if (formattedMessage.length() > 50) {
+                    formattedMessage = formattedMessage.substring(0, 50) + "...";
+                }
+            } else {
+                formattedMessage = "Không có thông báo commit";
+            }
+
+            String durationStr = "--";
+            if (dep.getStartTime() != null && dep.getEndTime() != null) {
+                java.time.Duration duration = java.time.Duration.between(dep.getStartTime(), dep.getEndTime());
+                long minutes = duration.toMinutes();
+                long seconds = duration.minusMinutes(minutes).getSeconds();
+
+                if (minutes > 0) {
+                    durationStr = minutes + "m " + seconds + "s";
+                } else {
+                    durationStr = seconds + "s";
+                }
+            } else if (dep.getStatus() == DeploymentStatus.BUILDING) {
+                durationStr = "Building...";
+            }
+
+            return new DeploymentHistoryResponse(
+                    dep.getId(),
+                    dep.getStartTime(),
+                    durationStr,
+                    dep.getStatus(),
+                    dep.getCommitSha(),
+                    formattedMessage
+            );
+        });
+
+        // 4. Trả về format chuẩn PageResponse của hệ thống
+        return PageResponse.from(responsePage);
+    }
+
+    @Override
+    public String getDeploymentLog(Integer deploymentId, String username) {
+        log.info("User {} yêu cầu xem log tĩnh của Deployment ID: {}", username, deploymentId);
+
+        // Bước 1: Xác thực tồn tại
+        Deployment deployment = deploymentRepository.findById(deploymentId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy bản ghi triển khai với ID: " + deploymentId));
+
+        // Bước 2: Phân quyền (Bảo mật cốt lõi)
+        Project project = projectRepository.findById(deployment.getProjectId())
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án liên kết với bản ghi này"));
+
+        if (!project.getUser().getUsername().equals(username)) {
+            log.warn("🚨 Cảnh báo xâm nhập: User {} cố tình đọc log nội bộ của Deployment ID {}", username, deploymentId);
+            throw new BusinessException(403, "Bạn không có quyền xem log của dự án này");
+        }
+
+        // Bước 3: Kiểm tra dữ liệu rác
+        String filePath = deployment.getFilePath();
+        if (filePath == null || filePath.trim().isEmpty()) {
+            return "Không có dữ liệu log cho lần triển khai này.";
+        }
+
+        // Bước 4: Kiểm tra vật lý & Đọc file
+        try {
+            Path path = Paths.get(filePath);
+            if (!Files.exists(path)) {
+                log.warn("File log vật lý không tồn tại ở đường dẫn: {}", filePath);
+                return "File log vật lý đã bị xóa hoặc thất lạc khỏi hệ thống lưu trữ.";
+            }
+
+            // Đọc toàn bộ dữ liệu file thành dạng văn bản thuần túy
+            return Files.readString(path);
+
+        } catch (Exception e) {
+            log.error("🔥 Lỗi I/O khi đọc file log {}: {}", filePath, e.getMessage());
+            throw new BusinessException(500, "Lỗi máy chủ khi truy xuất file log.");
+        }
+    }
+
     /**
      * Hàm phụ trợ lưu trạng thái vào DB
      */
@@ -291,5 +528,34 @@ public class DeploymentServiceImpl implements DeploymentService {
         project.setLastHealthCheck(LocalDateTime.now());
         if (port != null) project.setInternalPort(port);
         projectRepository.save(project);
+    }
+
+    /**
+     * Hàm phụ trợ: Ghi log vật lý ra file cho tiến trình Deploy
+     */
+    private void writeDeployLog(String filePath, String message) {
+        try {
+            Path path = Paths.get(filePath);
+
+            // 1. Đảm bảo thư mục cha (ví dụ: /var/bepaas/logs) chắc chắn phải tồn tại
+            if (path.getParent() != null) {
+                Files.createDirectories(path.getParent());
+            }
+
+            // 2. Gắn thêm mốc thời gian cho ngầu và chuyên nghiệp
+            String timePrefix = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + " | ";
+            String logLine = timePrefix + message + System.lineSeparator();
+
+            // 3. Thực thi ghi file: TẠO MỚI nếu chưa có, GHI NỐI TIẾP nếu file đã tồn tại
+            Files.writeString(
+                    path,
+                    logLine,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND
+            );
+
+        } catch (Exception e) {
+            log.error("❌ Hệ thống I/O lỗi, không thể ghi log ra file {}: {}", filePath, e.getMessage());
+        }
     }
 }
