@@ -99,4 +99,10 @@ public class DeploymentController {
         // Mở kết nối SSE
         return deploymentService.streamDeploymentLog(deploymentId, currentUsername);
     }
+
+    @GetMapping(value = "/project/{projectId}/logs/terminal", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamTerminalLogs(@PathVariable Integer projectId) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        return deploymentService.streamTerminalLogs(projectId, currentUsername);
+    }
 }

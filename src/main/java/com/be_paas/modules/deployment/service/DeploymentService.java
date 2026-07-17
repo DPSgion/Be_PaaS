@@ -33,4 +33,6 @@ public interface DeploymentService {
     SseEmitter streamDeploymentLog(Integer deploymentId, String username);
 
     PageResponse<DeploymentHistoryResponse> getProjectDeployHistories(Integer projectId, String username, int page, int size);
+
+    SseEmitter streamTerminalLogs(Integer projectId, String username);
 }

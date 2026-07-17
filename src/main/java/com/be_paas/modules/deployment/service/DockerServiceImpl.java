@@ -14,6 +14,9 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import com.github.dockerjava.api.command.LogContainerCmd;
+import com.github.dockerjava.api.model.Frame;
+import java.nio.charset.StandardCharsets;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -319,6 +322,58 @@ public class DockerServiceImpl implements DockerService {
             log.warn("⚠️ Không thể đọc Stats của Container ID {}: {}", containerId, e.getMessage());
             // Trả về 0 nếu có lỗi (Ví dụ: Container đang bị tắt)
             return new ContainerStatsDTO(0f, 0f);
+        }
+    }
+
+    @Override
+    public void streamContainerLogs(String containerId, int tailLines, java.util.function.Consumer<String> logConsumer, Runnable onComplete, java.util.function.Consumer<Throwable> onError) {
+        log.info("Bắt đầu mở luồng Live Log cho Container: {} (Kéo {} dòng cũ)", containerId, tailLines);
+
+        try {
+            LogContainerCmd logCmd = dockerClient.logContainerCmd(containerId)
+                    .withStdOut(true)
+                    .withStdErr(true)
+                    .withFollowStream(true) // Nghe trực tiếp
+                    .withTail(tailLines);   // Kéo log cũ
+
+            logCmd.exec(new ResultCallback.Adapter<Frame>() {
+                @Override
+                public void onNext(Frame frame) {
+                    // Chuyển mảng byte sang UTF-8
+                    String logLine = new String(frame.getPayload(), StandardCharsets.UTF_8);
+
+                    // Xóa ký tự xuống dòng thừa ở cuối (nếu có) để tránh Frontend hiển thị khoảng trắng
+                    if (logLine.endsWith("\n")) {
+                        logLine = logLine.substring(0, logLine.length() - 1);
+                    }
+
+                    // Phân biệt log thường và log lỗi để Frontend dễ tô màu
+                    switch (frame.getStreamType()) {
+                        case STDERR:
+                            logConsumer.accept("[ERROR] " + logLine);
+                            break;
+                        case STDOUT:
+                        default:
+                            logConsumer.accept(logLine);
+                            break;
+                    }
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    log.error("Lỗi khi đọc log container {}: {}", containerId, throwable.getMessage());
+                    onError.accept(throwable);
+                }
+
+                @Override
+                public void onComplete() {
+                    log.info("Luồng đọc log Container {} đã kết thúc hợp lệ.", containerId);
+                    onComplete.run();
+                }
+            });
+        } catch (Exception e) {
+            log.error("Không thể khởi tạo luồng đọc log: {}", e.getMessage());
+            onError.accept(e);
         }
     }
 }

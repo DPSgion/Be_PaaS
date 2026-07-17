@@ -490,6 +490,61 @@ public class DeploymentServiceImpl implements DeploymentService {
     }
 
     @Override
+    public SseEmitter streamTerminalLogs(Integer projectId, String username) {
+        log.info("User {} yêu cầu Terminal Logs (Runtime) cho Project ID: {}", username, projectId);
+
+        // 1. Phân quyền
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        if (!project.getUser().getUsername().equals(username)) {
+            throw new BusinessException(403, "Bạn không có quyền xem log của dự án này");
+        }
+
+        // 2. Lấy ID Container của bản Deploy SUCCESS gần nhất
+        Deployment latestDeploy = deploymentRepository
+                .findFirstByProjectIdAndStatusOrderByIdDesc(projectId, DeploymentStatus.SUCCESS)
+                .orElseThrow(() -> new BusinessException(400, "Dự án chưa được triển khai thành công, không có container để đọc log."));
+
+        String containerId = latestDeploy.getContainerId();
+        if (containerId == null || containerId.trim().isEmpty()) {
+            throw new BusinessException(400, "Không tìm thấy Container ID hợp lệ.");
+        }
+
+        // 3. Khởi tạo SSE (Timeout 0)
+        SseEmitter emitter = new SseEmitter(0L);
+
+        // 4. Giao việc cho DockerService
+        dockerService.streamContainerLogs(
+                containerId,
+                200, // Cấu hình cứng lấy 200 dòng cũ theo yêu cầu
+                (logLine) -> { // onNext callback
+                    try {
+                        emitter.send(SseEmitter.event().name("log").data(logLine));
+                    } catch (Exception e) {
+                        // Nếu Client đóng trình duyệt, send sẽ lỗi -> Chủ động ngắt Emitter
+                        emitter.complete();
+                    }
+                },
+                () -> { // onComplete callback
+                    try {
+                        emitter.send(SseEmitter.event().name("EOF").data("CONTAINER_STOPPED"));
+                        emitter.complete();
+                    } catch (Exception ignored) {}
+                },
+                (error) -> { // onError callback
+                    emitter.completeWithError(error);
+                }
+        );
+
+        // 5. Cấu hình giải phóng tài nguyên nếu Client chủ động ngắt
+        emitter.onCompletion(() -> log.info("Đã đóng kết nối Terminal Logs an toàn."));
+        emitter.onTimeout(() -> log.info("Terminal Logs kết nối bị Timeout."));
+
+        return emitter;
+    }
+
+    @Override
     public String getDeploymentLog(Integer deploymentId, String username) {
         log.info("User {} yêu cầu xem log tĩnh của Deployment ID: {}", username, deploymentId);
 
