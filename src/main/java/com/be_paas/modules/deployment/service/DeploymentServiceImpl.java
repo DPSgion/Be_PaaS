@@ -3,6 +3,8 @@ package com.be_paas.modules.deployment.service;
 import com.be_paas.core.config.AESUtil;
 import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
+import com.be_paas.modules.auditlog.entity.ActionType;
+import com.be_paas.modules.auditlog.service.AuditLogService;
 import com.be_paas.modules.deployment.dto.DeploymentHistoryResponse;
 import com.be_paas.modules.deployment.dto.WorkspaceResult;
 import com.be_paas.modules.deployment.entity.Deployment;
@@ -13,6 +15,8 @@ import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.repository.EnvironmentVariableRepository;
 import com.be_paas.modules.project.repository.ProjectRepository;
+import com.be_paas.modules.user.repository.UserRepository;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,6 +54,8 @@ public class DeploymentServiceImpl implements DeploymentService {
     private final ProjectRepository projectRepository;
     private final EnvironmentVariableRepository envVarRepository;
     private final DeploymentRepository deploymentRepository;
+    private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     private final WorkspaceService workspaceService;
     private final PortManagerService portManagerService;
@@ -542,6 +548,54 @@ public class DeploymentServiceImpl implements DeploymentService {
         emitter.onTimeout(() -> log.info("Terminal Logs kết nối bị Timeout."));
 
         return emitter;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void forceStopProject(Integer projectId, String adminUsername) {
+        log.info("💀 Admin {} phát lệnh FORCE STOP Project ID: {}", adminUsername, projectId);
+
+        // 1. Kiểm tra dự án & Admin
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        var adminUser = userRepository.findByUsername(adminUsername)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dữ liệu Admin"));
+
+        Deployment latestDeploy = deploymentRepository
+                .findFirstByProjectIdAndStatusOrderByIdDesc(projectId, DeploymentStatus.SUCCESS)
+                .orElseThrow(() -> new BusinessException(400, "Dự án chưa có môi trường chạy."));
+
+        String containerId = latestDeploy.getContainerId();
+        if (containerId == null || containerId.trim().isEmpty()) {
+            throw new BusinessException(400, "Không tìm thấy Container ID hợp lệ.");
+        }
+
+        // =========================================================
+        // SỬA GẮT KIẾN TRÚC: LƯU DATABASE TRƯỚC, GỌI NGOẠI VI SAU CÙNG
+        // =========================================================
+
+        // 2. Cập nhật Database
+        if (project.getStatus() != ProjectStatus.STOPPED) {
+            project.setStatus(ProjectStatus.STOPPED);
+            projectRepository.save(project);
+        }
+
+        // 3. Ghi Audit Log (Nếu 1 trong 2 bước DB lỗi, Exception sẽ ném ra ngay)
+        auditLogService.logProjectAction(
+                adminUser.getId(),
+                ActionType.FORCE_STOP,
+                projectId,
+                "Admin " + adminUsername + " đã ép dừng (Force Kill) dự án " + project.getProjectName()
+        );
+
+        // 4. Gọi Docker ở chốt chặn cuối
+        // Nếu lệnh này thất bại (vd: mất kết nối Docker), Exception văng ra,
+        // @Transactional sẽ lập tức ROLLBACK (hủy) toàn bộ dữ liệu ở bước 2 và 3.
+        // Đảm bảo không bao giờ xảy ra lỗi State Mismatch.
+        dockerService.killContainer(containerId);
+
+        log.info("✅ Đã hoàn tất Force Stop và đồng bộ Database an toàn cho Project {}", projectId);
     }
 
     @Override

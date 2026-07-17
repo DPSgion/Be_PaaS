@@ -64,4 +64,8 @@ public interface DockerService {
     ContainerStatsDTO getContainerStats(String containerId);
 
     void streamContainerLogs(String containerId, int tailLines, Consumer<String> logConsumer, Runnable onComplete, Consumer<Throwable> onError);
+
+
+    // Force Stop của Admin / System Admin
+    void killContainer(String containerId);
 }

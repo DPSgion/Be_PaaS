@@ -113,4 +113,15 @@ public class AuditLogServiceImpl implements AuditLogService{
                 .build();
         auditLogRepository.save(log);
     }
+
+    @Override
+    public void logProjectAction(Integer actorId, ActionType action, Integer targetProjectId, String description) {
+        AuditLog log = AuditLog.builder()
+                .implementerId(actorId)
+                .actionType(action)
+                .targetProject(targetProjectId) // Lưu ID dự án bị tác động
+                .describe(description)
+                .build();
+        auditLogRepository.save(log);
+    }
 }

@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -104,5 +105,18 @@ public class DeploymentController {
     public SseEmitter streamTerminalLogs(@PathVariable Integer projectId) {
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
         return deploymentService.streamTerminalLogs(projectId, currentUsername);
+    }
+
+
+    @PostMapping("/admin/{projectId}/force-stop")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
+    public ResponseEntity<String> forceStopProjectByAdmin(@PathVariable Integer projectId) {
+        // Lấy username của Admin đang đăng nhập
+        String currentAdminUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        // Chuyển luồng xử lý xuống tầng Service
+        deploymentService.forceStopProject(projectId, currentAdminUsername);
+
+        return ResponseEntity.ok("Đã ép dừng (Force Stop) dự án thành công.");
     }
 }

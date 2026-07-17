@@ -16,13 +16,13 @@ public enum ActionType {
 
     // Update role
     GRANT_ADMIN,
-    REVOKE_ADMIN
+    REVOKE_ADMIN,
 
     // ==================================== PROJECT ====================================
 
 //    CREATE_PROJECT,
 //    DELETE_PROJECT,
-//    FORCE_STOP,
+    FORCE_STOP
 //    UPDATE_ENV,
 //    MAP_DOMAIN
 

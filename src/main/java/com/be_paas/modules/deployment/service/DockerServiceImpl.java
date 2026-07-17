@@ -376,4 +376,21 @@ public class DockerServiceImpl implements DockerService {
             onError.accept(e);
         }
     }
+
+    @Override
+    public void killContainer(String containerId) {
+        log.info("💀 Bắt đầu FORCE KILL Container ID: {}", containerId);
+        try {
+            // Lệnh bóp cổ tiến trình ngay lập tức (Gửi tín hiệu SIGKILL)
+            dockerClient.killContainerCmd(containerId).exec();
+            log.info("✅ Đã Kill thành công Container ID: {}", containerId);
+
+        } catch (com.github.dockerjava.api.exception.NotFoundException e) {
+            log.error("❌ Không tìm thấy Container ID: {}", containerId);
+            throw new BusinessException(404, "Không tìm thấy Container trên hệ thống máy chủ.");
+        } catch (Exception e) {
+            log.error("❌ Lỗi không xác định khi ép dừng Container {}: {}", containerId, e.getMessage());
+            throw new BusinessException(500, "Không thể ép dừng dự án. Vui lòng kiểm tra log hệ thống.");
+        }
+    }
 }

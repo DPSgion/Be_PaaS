@@ -35,4 +35,6 @@ public interface DeploymentService {
     PageResponse<DeploymentHistoryResponse> getProjectDeployHistories(Integer projectId, String username, int page, int size);
 
     SseEmitter streamTerminalLogs(Integer projectId, String username);
+
+    void forceStopProject(Integer projectId, String adminUsername);
 }

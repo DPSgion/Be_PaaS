@@ -12,4 +12,5 @@ public interface AuditLogService {
 
     public void logUserAction(Integer actorId, ActionType action, Integer targetUserId, String description);
 
+    void logProjectAction(Integer actorId, ActionType action, Integer targetProjectId, String description);
 }
