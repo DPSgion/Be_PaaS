@@ -3,6 +3,7 @@ package com.be_paas.modules.project.service;
 import com.be_paas.core.config.AESUtil;
 import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
+import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -32,6 +34,8 @@ public class ProjectServiceImpl implements ProjectService {
     private final EnvironmentVariableRepository envVarRepository;
     private final AESUtil aesUtil;
     private final ResourceLogRepository resourceLogRepository;
+    private final OtpService otpService;
+    private final MailService mailService;
 
     @Override
     @Transactional
@@ -274,9 +278,78 @@ public class ProjectServiceImpl implements ProjectService {
         }).toList();
     }
 
+    // =========================================
+    // HÀM 1: YÊU CẦU XÓA (GỬI MAIL)
+    // =========================================
+    @Override
+    @Transactional(readOnly = true)
+    public void requestDeleteProject(Integer projectId, String username) {
+        Project project = getProjectIfOwnedByUser(projectId, username);
+
+        // 1. Tạo Key định danh duy nhất cho phiên xóa này
+        String otpKey = "DELETE_PROJECT_" + projectId + "_" + username;
+
+        // 2. Sinh mã lưu vào RAM
+        String otpCode = otpService.generateAndSaveOtp(otpKey);
+
+        // 3. Chuẩn bị dữ liệu gửi Mail theo chuẩn của bạn
+        Map<String, Object> variables = Map.of(
+                "projectName", project.getProjectName(),
+                "otpCode", otpCode,
+                "developerName", project.getUser().getFullName() != null ? project.getUser().getFullName() : username
+        );
+
+        // 4. Bắn Mail (Luồng Async không làm nghẽn API)
+        mailService.sendHtmlMail(
+                project.getUser().getEmail(),
+                "[Be-PaaS] Mã xác nhận xóa dự án " + project.getProjectName(),
+                "otp-delete-project", // Bạn cần tạo file otp-delete-project.html trong thư mục templates
+                variables
+        );
+
+        log.info("Đã gửi OTP xóa Project {} tới email của User {}", projectId, username);
+    }
+
+    // =========================================
+    // HÀM 2: XÁC NHẬN MÃ VÀ THỰC THI XÓA
+    // =========================================
+    @Override
+    @Transactional
+    public void confirmDeleteProject(Integer projectId, String username, String otpCode) {
+        Project project = getProjectIfOwnedByUser(projectId, username);
+
+        String otpKey = "DELETE_PROJECT_" + projectId + "_" + username;
+
+        // 1. Kiểm chứng mã OTP
+        if (!otpService.validateOtp(otpKey, otpCode)) {
+            throw new BusinessException(400, "Mã xác nhận không chính xác hoặc đã hết hạn.");
+        }
+
+        // 2. MÃ HỢP LỆ -> TIẾN HÀNH "KHAI TỬ" DỰ ÁN
+        log.info("Mã OTP hợp lệ. Đang tiến hành xóa toàn bộ dữ liệu Project ID: {}", projectId);
+
+        // TODO: (Bạn thêm code gọi DockerService để stop & remove container, xóa file log...)
+
+        // 3. ĐỔI TÊN VÀ XÓA MỀM (Giải phóng Namespace)
+        // Lấy thời gian hiện tại ép sang cơ số 36 để tạo mã băm ngắn gọn, độc nhất
+        String shortHash = Long.toString(System.currentTimeMillis(), 36);
+
+        // Ghép chuỗi theo chuẩn: {tên}-{nhánh}-deleted-{username}-{hash}
+        String deletedName = String.format("%s-%s-deleted-%s-%s",
+                project.getProjectName(),
+                project.getBranch(),
+                username,
+                shortHash);
+
+        project.setProjectName(deletedName);
+        project.setIsDeleted(true);
+        projectRepository.save(project);
+
+        log.info("Đã xoa thành công. Project ID {} được đổi tên thành: {}", projectId, deletedName);
+    }
+
     private Project getProjectIfOwnedByUser(Integer projectId, String username) {
-        // 1. Tìm dự án trong Database
-        Project project = projectRepository.findById(projectId)
+        Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án với mã: " + projectId));
 
         // 2. Lấy danh sách quyền hạn của người đang gọi API từ Spring Security Context

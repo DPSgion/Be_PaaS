@@ -25,4 +25,7 @@ public interface ProjectService {
     PageResponse<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable);
 
     List<ProjectListResponse> getMyProjects(String username, String projectName, ProjectStatus status);
+
+    void requestDeleteProject(Integer projectId, String username);
+    void confirmDeleteProject(Integer projectId, String username, String otpCode);
 }

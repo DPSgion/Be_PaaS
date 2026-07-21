@@ -7,7 +7,6 @@ import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.service.ProjectService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -116,5 +115,24 @@ public class ProjectController {
         PageResponse<AdminProjectListResponse> result = projectService.getAdminProjects(projectName, developer, status, pageable);
 
         return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/{projectId}/delete/request")
+    public ResponseEntity<String> requestDeleteProject(@PathVariable Integer projectId) {
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        projectService.requestDeleteProject(projectId, currentUsername);
+
+        return ResponseEntity.ok("Mã xác nhận đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư.");
+    }
+
+    @DeleteMapping("/{projectId}/delete/confirm")
+    public ResponseEntity<String> confirmDeleteProject(
+            @PathVariable Integer projectId,
+            @RequestBody OtpConfirmRequest request) {
+
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        projectService.confirmDeleteProject(projectId, currentUsername, request.otpCode());
+
+        return ResponseEntity.ok("Dự án đã được xóa thành công khỏi hệ thống.");
     }
 }

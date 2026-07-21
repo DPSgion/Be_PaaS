@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Xác nhận xóa dự án Be-PaaS</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f6f8;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #dc3545; /* Màu đỏ cảnh báo nghiêm trọng */
+            color: #ffffff;
+            padding: 20px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .content {
+            padding: 30px;
+            color: #333333;
+            line-height: 1.6;
+            font-size: 16px;
+        }
+        .otp-box {
+            background-color: #f8d7da; /* Nền đỏ nhạt */
+            color: #721c24; /* Chữ đỏ đậm */
+            border: 2px dashed #f5c6cb;
+            border-radius: 6px;
+            padding: 20px;
+            text-align: center;
+            font-size: 36px;
+            font-weight: bold;
+            letter-spacing: 8px;
+            margin: 30px 0;
+        }
+        .warning-box {
+            background-color: #fff3cd; /* Nền vàng cảnh báo */
+            border-left: 5px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+        .warning-text {
+            color: #856404;
+            font-weight: bold;
+            margin: 0;
+        }
+        .footer {
+            background-color: #f1f1f1;
+            color: #666666;
+            text-align: center;
+            padding: 15px;
+            font-size: 12px;
+            border-top: 1px solid #eeeeee;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        Xác Nhận Xóa Dự Án
+    </div>
+    <div class="content">
+        <p>Xin chào <strong th:text="${developerName}">Developer</strong>,</p>
+
+        <p>Hệ thống Be-PaaS vừa nhận được yêu cầu <strong>XÓA VĨNH VIỄN</strong> dự án <strong style="color: #dc3545; font-size: 18px;" th:text="${projectName}">Tên Dự Án</strong> của bạn.</p>
+
+        <p>Để hoàn tất quá trình này, vui lòng nhập mã xác nhận (OTP) gồm 6 chữ số dưới đây vào màn hình hệ thống:</p>
+
+        <!-- Khu vực hiển thị OTP to, rõ ràng -->
+        <div class="otp-box" th:text="${otpCode}">
+            123456
+        </div>
+
+        <p style="text-align: center; font-style: italic; color: #555;">
+            ⏳ Mã xác nhận này sẽ tự động hết hạn sau <strong>5 phút</strong>.
+        </p>
+
+        <!-- Cảnh báo hậu quả -->
+        <div class="warning-box">
+            <p class="warning-text">⚠️ LƯU Ý QUAN TRỌNG:</p>
+            Hành động này <strong>không thể hoàn tác</strong>. Toàn bộ mã nguồn, dữ liệu container, cấu hình mạng và biến môi trường của dự án sẽ bị hủy ngay lập tức.
+        </div>
+
+        <p>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này hoặc liên hệ ngay với quản trị viên để bảo vệ tài khoản.</p>
+
+        <p>Trân trọng,<br><strong>Đội ngũ Be-PaaS</strong></p>
+    </div>
+    <div class="footer">
+        Đây là email tự động từ hệ thống Be-PaaS, vui lòng không phản hồi.<br>
+        &copy; 2026 Be-PaaS System.
+    </div>
+</div>
+</body>
+</html>
