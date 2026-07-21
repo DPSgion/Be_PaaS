@@ -23,4 +23,6 @@ public interface ProjectService {
     void updateProjectSettings(Integer projectId, ProjectUpdateRequest request, String username);
 
     PageResponse<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable);
+
+    List<ProjectListResponse> getMyProjects(String username, String projectName, ProjectStatus status);
 }

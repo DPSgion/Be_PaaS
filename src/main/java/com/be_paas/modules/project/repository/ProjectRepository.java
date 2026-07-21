@@ -47,4 +47,15 @@ public interface ProjectRepository extends JpaRepository<Project, Integer> {
 
     // Đếm số dự án đang chạy (RUNNING) của một User (chưa bị xóa)
     long countByUser_IdAndStatusAndIsDeletedFalse(Integer userId, ProjectStatus status);
+
+    // Lọc dự án của Developer theo tên và trạng thái
+    @Query("SELECT p FROM Project p WHERE p.user.username = :username AND p.isDeleted = false " +
+            "AND (:projectName IS NULL OR LOWER(p.projectName) LIKE LOWER(CONCAT('%', :projectName, '%'))) " +
+            "AND (:status IS NULL OR p.status = :status) " +
+            "ORDER BY p.createdAt DESC")
+    List<Project> findMyProjectsWithFilters(
+            @Param("username") String username,
+            @Param("projectName") String projectName,
+            @Param("status") ProjectStatus status
+    );
 }

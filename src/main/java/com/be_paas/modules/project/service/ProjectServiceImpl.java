@@ -254,6 +254,26 @@ public class ProjectServiceImpl implements ProjectService {
         return PageResponse.from(dtoPage);
     }
 
+    @Override
+    public List<ProjectListResponse> getMyProjects(String username, String projectName, ProjectStatus status) {
+        // 1. Query danh sách dự án từ DB có áp dụng bộ lọc (SỬA GẮT)
+        List<Project> projects = projectRepository.findMyProjectsWithFilters(username, projectName, status);
+
+        // 2. Map từ Entity sang DTO để trả cho Frontend (Giữ nguyên)
+        return projects.stream().map(project -> {
+            String displayDomain = project.getSubdomain();
+
+            return new ProjectListResponse(
+                    project.getId(),
+                    project.getProjectName(),
+                    displayDomain,
+                    project.getBranch(),
+                    project.getStatus(),
+                    project.getCreatedAt()
+            );
+        }).toList();
+    }
+
     private Project getProjectIfOwnedByUser(Integer projectId, String username) {
         // 1. Tìm dự án trong Database
         Project project = projectRepository.findById(projectId)

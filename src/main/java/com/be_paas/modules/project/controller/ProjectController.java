@@ -27,12 +27,15 @@ public class ProjectController {
     private final ProjectService projectService;
 
     @GetMapping
-    public ResponseEntity<List<ProjectListResponse>> getMyProjects() {
+    public ResponseEntity<List<ProjectListResponse>> getMyProjects(
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) ProjectStatus status
+    ) {
         // Lấy username của người dùng đang đăng nhập từ Security Context
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
 
-        // Gọi Service và trả về HTTP 200 OK cùng mảng dữ liệu
-        List<ProjectListResponse> projects = projectService.getMyProjects(currentUsername);
+        // Gọi Service truyền thêm biến lọc và trả về HTTP 200 OK
+        List<ProjectListResponse> projects = projectService.getMyProjects(currentUsername, projectName, status);
         return ResponseEntity.ok(projects);
     }
 
