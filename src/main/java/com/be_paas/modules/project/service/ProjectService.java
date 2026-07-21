@@ -11,7 +11,6 @@ import java.util.List;
 
 public interface ProjectService {
     Project importProject(ProjectCreateRequest request, String username);
-    List<ProjectListResponse> getMyProjects(String username);
     ProjectDetailResponse getProjectDetail(Integer projectId, String username);
 
     void addEnvironmentVariable(Integer projectId, EnvVarRequest request, String username);

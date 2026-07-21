@@ -46,9 +46,9 @@ public class ProjectServiceImpl implements ProjectService {
         // Chuẩn hóa tên dự án: Chuyển thành chữ thường hoàn toàn
         String normalizedProjectName = request.projectName().toLowerCase();
 
-        // SỬA GẮT: Kiểm tra trùng lặp trên cả 2 điều kiện (Tên dự án + Tên nhánh)
-        if (projectRepository.existsByProjectNameAndBranch(normalizedProjectName, request.branch())) {
-            throw new BusinessException(400, "Dự án '" + normalizedProjectName + "' với nhánh '" + request.branch() + "' đã tồn tại trong hệ thống.");
+        // SỬA GẮT: Kiểm tra trùng lặp (User + Tên dự án + Tên nhánh)
+        if (projectRepository.existsByUserAndProjectNameAndBranch(user, normalizedProjectName, request.branch())) {
+            throw new BusinessException(400, "Bạn đã có dự án '" + normalizedProjectName + "' với nhánh '" + request.branch() + "' rồi. Vui lòng chọn tên hoặc nhánh khác.");
         }
 
         // Khởi tạo Project Entity để lưu vào DB
@@ -77,26 +77,6 @@ public class ProjectServiceImpl implements ProjectService {
         return projectRepository.save(project);
     }
 
-    @Override
-    public List<ProjectListResponse> getMyProjects(String username) {
-        // 1. Query danh sách dự án từ DB
-        List<Project> projects = projectRepository.findByUser_UsernameAndIsDeletedFalseOrderByCreatedAtDesc(username);
-
-        // 2. Map từ Entity sang DTO để trả cho Frontend
-        return projects.stream().map(project -> {
-            // Xử lý domain: Nếu chưa có tên miền (mới import), trả về null hoặc chuỗi rỗng
-            String displayDomain = project.getSubdomain();
-
-            return new ProjectListResponse(
-                    project.getId(),
-                    project.getProjectName(),
-                    displayDomain,
-                    project.getBranch(),
-                    project.getStatus(),
-                    project.getCreatedAt()
-            );
-        }).toList();
-    }
 
     @Override
     @Transactional(readOnly = true)
@@ -200,9 +180,9 @@ public class ProjectServiceImpl implements ProjectService {
         // ==========================================
         String normalizedProjectName = request.projectName().toLowerCase();
 
-        // Kiểm tra xem tổ hợp (Tên mới + Nhánh mới) đã bị thằng khác chiếm chưa (loại trừ chính nó)
-        if (projectRepository.existsByProjectNameAndBranchAndIdNot(normalizedProjectName, request.branch(), projectId)) {
-            throw new BusinessException(400, "Dự án '" + normalizedProjectName + "' với nhánh '" + request.branch() + "' đã tồn tại trong hệ thống. Vui lòng chọn tên hoặc nhánh khác.");
+        // Chỉ kiểm tra trùng lặp trong phạm vi các dự án CỦA CHÍNH USER NÀY
+        if (projectRepository.existsByUserAndProjectNameAndBranchAndIdNot(project.getUser(), normalizedProjectName, request.branch(), projectId)) {
+            throw new BusinessException(400, "Bạn đã có dự án '" + normalizedProjectName + "' với nhánh '" + request.branch() + "'. Vui lòng chọn tên hoặc nhánh khác.");
         }
 
         // 3. Cập nhật các trường thông tin

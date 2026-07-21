@@ -2,6 +2,7 @@ package com.be_paas.modules.project.repository;
 
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
+import com.be_paas.modules.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -58,4 +59,10 @@ public interface ProjectRepository extends JpaRepository<Project, Integer> {
             @Param("projectName") String projectName,
             @Param("status") ProjectStatus status
     );
+
+    // Kiểm tra trùng lặp lúc Import (Chỉ xét trong phạm vi dự án của User đó)
+    boolean existsByUserAndProjectNameAndBranch(User user, String projectName, String branch);
+
+    // Kiểm tra trùng lặp lúc Update Settings (Loại trừ ID hiện tại ra)
+    boolean existsByUserAndProjectNameAndBranchAndIdNot(User user, String projectName, String branch, Integer id);
 }
