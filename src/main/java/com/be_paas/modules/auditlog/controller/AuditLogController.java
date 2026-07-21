@@ -3,6 +3,7 @@ package com.be_paas.modules.auditlog.controller;
 import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.auditlog.dto.AuditLogResponse;
 import com.be_paas.modules.auditlog.service.AuditLogService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/audit-log")
+@PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
 public class AuditLogController {
 
     private final AuditLogService auditLogService;
