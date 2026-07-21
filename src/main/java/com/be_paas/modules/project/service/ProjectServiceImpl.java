@@ -2,6 +2,7 @@ package com.be_paas.modules.project.service;
 
 import com.be_paas.core.config.AESUtil;
 import com.be_paas.core.exception.BusinessException;
+import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -218,12 +220,13 @@ public class ProjectServiceImpl implements ProjectService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable) {
+    public PageResponse<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable) {
+
         // 1. Quét danh sách dự án kèm phân trang và bộ lọc
         Page<Project> projects = projectRepository.findProjectsForAdmin(projectName, status, developer, pageable);
 
         // 2. Chuyển đổi Entity sang DTO và đắp số liệu CPU/RAM
-        return projects.map(project -> {
+        Page<AdminProjectListResponse> dtoPage = projects.map(project -> {
             Float cpu = null;
             Float ram = null;
 
@@ -247,6 +250,8 @@ public class ProjectServiceImpl implements ProjectService {
                     ram
             );
         });
+
+        return PageResponse.from(dtoPage);
     }
 
     private Project getProjectIfOwnedByUser(Integer projectId, String username) {
@@ -254,8 +259,16 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án với mã: " + projectId));
 
-        // 2. Đối chiếu định danh người dùng
-        // Lưu ý: Đảm bảo class User của bạn có field username hoặc phương thức getUsername()
+        // 2. Lấy danh sách quyền hạn của người đang gọi API từ Spring Security Context
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_SYSTEM_ADMIN"));
+
+        // Nếu là Admin hoặc System Admin thì cho phép đi qua ngay lập tức
+        if (isAdmin) {
+            return project;
+        }
+
+        // 3. Nếu chỉ là Developer bình thường, bắt buộc phải đúng tên chủ sở hữu
         if (!project.getUser().getUsername().equals(username)) {
             log.warn("Cảnh báo bảo mật: User {} cố tình truy cập trái phép vào Project ID {}", username, projectId);
             throw new BusinessException(403, "Bạn không có quyền thao tác trên dự án này");

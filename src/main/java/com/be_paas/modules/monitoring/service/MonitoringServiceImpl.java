@@ -12,6 +12,7 @@ import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -36,13 +37,7 @@ public class MonitoringServiceImpl implements MonitoringService {
     @Override
     public ProjectMetricsResponse getProjectMetrics(Integer projectId, String username) {
         // 1. Lấy thông tin dự án và kiểm tra quyền sở hữu tuyệt đối
-        Project project = projectRepository.findByIdWithUser(projectId)
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
-
-        if (!project.getUser().getUsername().equals(username)) {
-            log.warn("Cảnh báo bảo mật: User {} cố xem tài nguyên giám sát của Project ID {}", username, projectId);
-            throw new BusinessException(403, "Bạn không có quyền truy cập dữ liệu giám sát của dự án này");
-        }
+        Project project = validateAccessAndGetProject(projectId, username);
 
         // 2 & 3. Lấy Container ID và dung lượng Image cùng lúc từ lịch sử Deploy thành công gần nhất
         String containerId = null;
@@ -68,13 +63,7 @@ public class MonitoringServiceImpl implements MonitoringService {
     @Override
     public List<ResourceChartResponse> getResourceChart(Integer projectId, String username) {
         // 1. Kiểm tra quyền sở hữu dự án (Tương tự hàm lấy thông số tĩnh)
-        Project project = projectRepository.findByIdWithUser(projectId)
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
-
-        if (!project.getUser().getUsername().equals(username)) {
-            log.warn("Cảnh báo bảo mật: User {} cố xem biểu đồ của Project ID {}", username, projectId);
-            throw new BusinessException(403, "Bạn không có quyền truy cập dữ liệu giám sát của dự án này");
-        }
+        Project project = validateAccessAndGetProject(projectId, username);
 
         // 2. Lấy danh sách lịch sử tài nguyên (đã sắp xếp cũ -> mới)
         List<ResourceLog> logs = resourceLogRepository.findByProjectIdOrderByCreatedAtAsc(projectId);
@@ -98,12 +87,7 @@ public class MonitoringServiceImpl implements MonitoringService {
     @Override
     public SseEmitter subscribe(Integer projectId, String username) {
         // Kiểm tra quyền sở hữu dự án trước khi cho phép mở luồng stream
-        Project project = projectRepository.findByIdWithUser(projectId)
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
-
-        if (!project.getUser().getUsername().equals(username)) {
-            throw new BusinessException(403, "Bạn không có quyền xem luồng dữ liệu của dự án này");
-        }
+        Project project = validateAccessAndGetProject(projectId, username);
 
         // Khởi tạo ống dẫn sống trong 30 phút
         SseEmitter emitter = new SseEmitter(1800000L);
@@ -132,22 +116,13 @@ public class MonitoringServiceImpl implements MonitoringService {
         if (emitters != null && !emitters.isEmpty()) {
             for (SseEmitter emitter : emitters) {
                 try {
-                    // Cố gắng bơm dữ liệu xuống Frontend
                     emitter.send(SseEmitter.event().name("NEW_CHART_DATA").data(data));
-                } catch (Exception e) { // Bắt luôn Exception tổng thay vì chỉ IOException
-                    // 1. Mạng đứt -> Xóa Emitter khỏi danh sách ngay lập tức
+                } catch (Exception e) {
+                    // Ống dẫn đã vỡ, chỉ cần gỡ bỏ nó khỏi danh sách.
+                    // kHÔNG GỌI emitter.complete() ĐỂ TRÁNH LỖI FLUSH BUFFER.
                     emitters.remove(emitter);
-
-                    // 2. "Khóa họng" lệnh complete() bằng một try-catch tĩnh lặng
-                    try {
-                        emitter.complete();
-                    } catch (Exception ignored) {
-                        // Nơi này im lặng tuyệt đối.
-                        // Mạng đã đứt, không cần ném lỗi ra ngoài cho ExceptionHandler xử lý nữa.
-                    }
                 }
             }
-            // Dọn luôn mảng nếu không còn ai nghe
             if (emitters.isEmpty()) {
                 projectEmitters.remove(projectId);
             }
@@ -163,5 +138,21 @@ public class MonitoringServiceImpl implements MonitoringService {
                 projectEmitters.remove(projectId);
             }
         }
+    }
+
+    // Kiểm tra để xem có được xem không
+    private Project validateAccessAndGetProject(Integer projectId, String username) {
+        Project project = projectRepository.findByIdWithUser(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_SYSTEM_ADMIN"));
+
+        if (!isAdmin && !project.getUser().getUsername().equals(username)) {
+            log.warn("Cảnh báo bảo mật: User {} cố xem tài nguyên giám sát của Project ID {}", username, projectId);
+            throw new BusinessException(403, "Bạn không có quyền truy cập dữ liệu giám sát của dự án này");
+        }
+
+        return project;
     }
 }

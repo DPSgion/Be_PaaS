@@ -1,5 +1,6 @@
 package com.be_paas.modules.project.service;
 
+import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
@@ -21,5 +22,5 @@ public interface ProjectService {
 
     void updateProjectSettings(Integer projectId, ProjectUpdateRequest request, String username);
 
-    Page<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable);
+    PageResponse<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable);
 }

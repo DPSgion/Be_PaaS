@@ -13,6 +13,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.LocalDateTime;
@@ -126,6 +127,12 @@ public class GlobalExceptionHandler {
                 "message", "You don't have permission to do this action ! Just ADMIN can do that.",
                 "timestamp", LocalDateTime.now().toString()
         ));
+    }
+
+    // 9. Handle SSE Disconnected Client (Broken Pipe)
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsableException(AsyncRequestNotUsableException ex) {
+        log.info("[SSE Client Disconnected]");
     }
 
 }

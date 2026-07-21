@@ -1,5 +1,6 @@
 package com.be_paas.modules.project.controller;
 
+import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
@@ -100,18 +101,16 @@ public class ProjectController {
 
     @GetMapping("/admin")
     @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<Page<AdminProjectListResponse>> getAllProjectsForAdmin(
+    public ResponseEntity<PageResponse<AdminProjectListResponse>> getAllProjectsForAdmin(
             @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String developer,
             @RequestParam(required = false) ProjectStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        // Cấu hình phân trang: Sắp xếp theo ngày tạo mới nhất (giống như Dashboard yêu cầu)
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
 
-        // Gọi xuống Service
-        Page<AdminProjectListResponse> result = projectService.getAdminProjects(projectName, developer, status, pageable);
+        PageResponse<AdminProjectListResponse> result = projectService.getAdminProjects(projectName, developer, status, pageable);
 
         return ResponseEntity.ok(result);
     }

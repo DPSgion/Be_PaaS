@@ -16,6 +16,7 @@ import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.repository.EnvironmentVariableRepository;
 import com.be_paas.modules.project.repository.ProjectRepository;
 import com.be_paas.modules.user.repository.UserRepository;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -339,13 +340,8 @@ public class DeploymentServiceImpl implements DeploymentService {
         Deployment deployment = deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy bản ghi triển khai"));
 
-        Project project = projectRepository.findByIdWithUser(deployment.getProjectId())
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
-
-        if (!project.getUser().getUsername().equals(username)) {
-            log.warn("🚨 Cảnh báo xâm nhập: User {} cố tình nghe lén log Live của Deployment ID {}", username, deploymentId);
-            throw new BusinessException(403, "Bạn không có quyền xem log của dự án này");
-        }
+        // Truyền projectId từ deployment vào hàm kiểm tra
+        Project project = validateAccessAndGetProject(deployment.getProjectId(), username, "nghe lén log Live");
 
         String filePath = deployment.getFilePath();
         if (filePath == null || filePath.trim().isEmpty()) {
@@ -432,12 +428,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     public PageResponse<DeploymentHistoryResponse> getProjectDeployHistories(Integer projectId, String username, int page, int size) {
         log.info("User {} yêu cầu xem lịch sử Deploy của Project ID: {} (Page: {})", username, projectId, page);
 
-        Project project = projectRepository.findByIdWithUser(projectId)
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
-
-        if (!project.getUser().getUsername().equals(username)) {
-            throw new BusinessException(403, "Bạn không có quyền xem lịch sử của dự án này");
-        }
+        Project project = validateAccessAndGetProject(projectId, username, "xem lịch sử");
 
         // 1. Tạo đối tượng Pageable (Mặc định sort đã được xử lý ở tên hàm Repository)
         Pageable pageable = PageRequest.of(page, size);
@@ -499,13 +490,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     public SseEmitter streamTerminalLogs(Integer projectId, String username) {
         log.info("User {} yêu cầu Terminal Logs (Runtime) cho Project ID: {}", username, projectId);
 
-        // 1. Phân quyền
-        Project project = projectRepository.findByIdWithUser(projectId)
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
-
-        if (!project.getUser().getUsername().equals(username)) {
-            throw new BusinessException(403, "Bạn không có quyền xem log của dự án này");
-        }
+        Project project = validateAccessAndGetProject(projectId, username, "xem Terminal Log");
 
         // 2. Lấy ID Container của bản Deploy SUCCESS gần nhất
         Deployment latestDeploy = deploymentRepository
@@ -606,22 +591,15 @@ public class DeploymentServiceImpl implements DeploymentService {
         Deployment deployment = deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy bản ghi triển khai với ID: " + deploymentId));
 
-        // Bước 2: Phân quyền (Bảo mật cốt lõi)
-        Project project = projectRepository.findByIdWithUser(deployment.getProjectId())
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+        Project project = validateAccessAndGetProject(deployment.getProjectId(), username, "đọc log nội bộ");
 
-        if (!project.getUser().getUsername().equals(username)) {
-            log.warn("🚨 Cảnh báo xâm nhập: User {} cố tình đọc log nội bộ của Deployment ID {}", username, deploymentId);
-            throw new BusinessException(403, "Bạn không có quyền xem log của dự án này");
-        }
-
-        // Bước 3: Kiểm tra dữ liệu rác
+        // Bước 2: Kiểm tra dữ liệu rác
         String filePath = deployment.getFilePath();
         if (filePath == null || filePath.trim().isEmpty()) {
             return "Không có dữ liệu log cho lần triển khai này.";
         }
 
-        // Bước 4: Kiểm tra vật lý & Đọc file
+        // Bước 3: Kiểm tra vật lý & Đọc file
         try {
             Path path = Paths.get(filePath);
             if (!Files.exists(path)) {
@@ -675,5 +653,24 @@ public class DeploymentServiceImpl implements DeploymentService {
         } catch (Exception e) {
             log.error("❌ Hệ thống I/O lỗi, không thể ghi log ra file {}: {}", filePath, e.getMessage());
         }
+    }
+
+    /**
+     * Hàm phụ trợ kiểm tra quyền truy cập dự án cho module Deployment
+     * Cho phép cả Chủ sở hữu và (SYSTEM) ADMIN đi qua.
+     */
+    private Project validateAccessAndGetProject(Integer projectId, String username, String actionName) {
+        Project project = projectRepository.findByIdWithUser(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
+
+        boolean isAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_SYSTEM_ADMIN"));
+
+        if (!isAdmin && !project.getUser().getUsername().equals(username)) {
+            log.warn("🚨 Cảnh báo xâm nhập: User {} cố tình {} của Project ID {}", username, actionName, projectId);
+            throw new BusinessException(403, "Bạn không có quyền " + actionName + " của dự án này");
+        }
+
+        return project;
     }
 }
