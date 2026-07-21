@@ -41,4 +41,10 @@ public interface ProjectRepository extends JpaRepository<Project, Integer> {
             @Param("developer") String developer,
             Pageable pageable
     );
+
+    // Đếm tổng số dự án của một User (chưa bị xóa)
+    long countByUser_IdAndIsDeletedFalse(Integer userId);
+
+    // Đếm số dự án đang chạy (RUNNING) của một User (chưa bị xóa)
+    long countByUser_IdAndStatusAndIsDeletedFalse(Integer userId, ProjectStatus status);
 }

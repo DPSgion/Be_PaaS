@@ -132,10 +132,19 @@ public class MonitoringServiceImpl implements MonitoringService {
         if (emitters != null && !emitters.isEmpty()) {
             for (SseEmitter emitter : emitters) {
                 try {
+                    // Cố gắng bơm dữ liệu xuống Frontend
                     emitter.send(SseEmitter.event().name("NEW_CHART_DATA").data(data));
-                } catch (IOException e) {
-                    emitter.complete();
+                } catch (Exception e) { // Bắt luôn Exception tổng thay vì chỉ IOException
+                    // 1. Mạng đứt -> Xóa Emitter khỏi danh sách ngay lập tức
                     emitters.remove(emitter);
+
+                    // 2. "Khóa họng" lệnh complete() bằng một try-catch tĩnh lặng
+                    try {
+                        emitter.complete();
+                    } catch (Exception ignored) {
+                        // Nơi này im lặng tuyệt đối.
+                        // Mạng đã đứt, không cần ném lỗi ra ngoài cho ExceptionHandler xử lý nữa.
+                    }
                 }
             }
             // Dọn luôn mảng nếu không còn ai nghe

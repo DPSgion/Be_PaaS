@@ -14,6 +14,9 @@ public record UserResponse(
         String githubUsername,
         Role role,
         UserStatus status,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        long activeProjectCount,
+        long totalProjectCount
 ) {
 }

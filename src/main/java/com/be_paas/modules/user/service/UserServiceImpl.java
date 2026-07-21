@@ -7,6 +7,8 @@ import com.be_paas.modules.auditlog.service.AuditLogService;
 import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.notification.entity.NotificationType;
 import com.be_paas.modules.notification.service.NotificationService;
+import com.be_paas.modules.project.entity.ProjectStatus;
+import com.be_paas.modules.project.repository.ProjectRepository;
 import com.be_paas.modules.user.dto.*;
 import com.be_paas.modules.user.entity.Role;
 import com.be_paas.modules.user.entity.User;
@@ -34,14 +36,16 @@ public class UserServiceImpl implements UserService {
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
     private final MailService mailService;
+    private final ProjectRepository projectRepository;
 
-    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder, AuditLogService auditLogService, NotificationService notificationService, MailService mailService) {
+    public UserServiceImpl(UserRepository userRepository, UserMapper userMapper, BCryptPasswordEncoder passwordEncoder, AuditLogService auditLogService, NotificationService notificationService, MailService mailService, ProjectRepository projectRepository) {
         this.userRepository = userRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
         this.mailService = mailService;
+        this.projectRepository = projectRepository;
     }
 
     // ================================================= ADMIN METHODS =================================================
@@ -63,7 +67,25 @@ public class UserServiceImpl implements UserService {
 
         Page<User> userPage = userRepository.searchUsersWithFilter(term, role, pageable);
 
-        return PageResponse.from(userPage.map(userMapper::toResponse));
+        return PageResponse.from(userPage.map(user -> {
+            long activeCount = projectRepository.countByUser_IdAndStatusAndIsDeletedFalse(user.getId(), ProjectStatus.RUNNING);
+            long totalCount = projectRepository.countByUser_IdAndIsDeletedFalse(user.getId());
+
+            // Đóng gói DTO mới trọn vẹn
+            return new UserResponse(
+                    user.getId(),
+                    user.getEmail(),
+                    user.getUsername(),
+                    user.getFullName(),
+                    user.getAvatarUrl(),
+                    user.getGithubUsername(),
+                    user.getRole(),
+                    user.getStatus(),
+                    user.getCreatedAt(),
+                    activeCount, // Truyền số active vào
+                    totalCount   // Truyền số total vào
+            );
+        }));
     }
 
     @Override
