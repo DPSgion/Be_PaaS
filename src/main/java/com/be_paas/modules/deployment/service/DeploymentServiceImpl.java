@@ -237,7 +237,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     public void restartProject(Integer projectId, String username) {
         log.info("User {} yêu cầu Restart Project ID: {}", username, projectId);
 
-        Project project = projectRepository.findById(projectId)
+        Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
         if (!project.getUser().getUsername().equals(username)) {
@@ -269,7 +269,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     public void stopProject(Integer projectId, String username) {
         log.info("User {} yêu cầu Stop Project ID: {}", username, projectId);
 
-        Project project = projectRepository.findById(projectId)
+        Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
         if (!project.getUser().getUsername().equals(username)) {
@@ -301,7 +301,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     public void startProject(Integer projectId, String username) {
         log.info("User {} yêu cầu Start Project ID: {}", username, projectId);
 
-        Project project = projectRepository.findById(projectId)
+        Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
         if (!project.getUser().getUsername().equals(username)) {
@@ -339,8 +339,8 @@ public class DeploymentServiceImpl implements DeploymentService {
         Deployment deployment = deploymentRepository.findById(deploymentId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy bản ghi triển khai"));
 
-        Project project = projectRepository.findById(deployment.getProjectId())
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án liên kết"));
+        Project project = projectRepository.findByIdWithUser(deployment.getProjectId())
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
         if (!project.getUser().getUsername().equals(username)) {
             log.warn("🚨 Cảnh báo xâm nhập: User {} cố tình nghe lén log Live của Deployment ID {}", username, deploymentId);
@@ -432,7 +432,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     public PageResponse<DeploymentHistoryResponse> getProjectDeployHistories(Integer projectId, String username, int page, int size) {
         log.info("User {} yêu cầu xem lịch sử Deploy của Project ID: {} (Page: {})", username, projectId, page);
 
-        Project project = projectRepository.findById(projectId)
+        Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
         if (!project.getUser().getUsername().equals(username)) {
@@ -500,7 +500,7 @@ public class DeploymentServiceImpl implements DeploymentService {
         log.info("User {} yêu cầu Terminal Logs (Runtime) cho Project ID: {}", username, projectId);
 
         // 1. Phân quyền
-        Project project = projectRepository.findById(projectId)
+        Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
         if (!project.getUser().getUsername().equals(username)) {
@@ -607,8 +607,8 @@ public class DeploymentServiceImpl implements DeploymentService {
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy bản ghi triển khai với ID: " + deploymentId));
 
         // Bước 2: Phân quyền (Bảo mật cốt lõi)
-        Project project = projectRepository.findById(deployment.getProjectId())
-                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án liên kết với bản ghi này"));
+        Project project = projectRepository.findByIdWithUser(deployment.getProjectId())
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án"));
 
         if (!project.getUser().getUsername().equals(username)) {
             log.warn("🚨 Cảnh báo xâm nhập: User {} cố tình đọc log nội bộ của Deployment ID {}", username, deploymentId);

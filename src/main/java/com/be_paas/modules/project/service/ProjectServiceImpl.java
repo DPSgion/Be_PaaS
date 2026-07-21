@@ -93,6 +93,7 @@ public class ProjectServiceImpl implements ProjectService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ProjectDetailResponse getProjectDetail(Integer projectId, String username) {
         // Gọi hàm helper để lấy dự án và xác thực quyền sở hữu
         Project project = getProjectIfOwnedByUser(projectId, username);
@@ -157,6 +158,7 @@ public class ProjectServiceImpl implements ProjectService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<EnvVarResponse> getEnvironmentVariables(Integer projectId, String username) {
         Project project = getProjectIfOwnedByUser(projectId, username);
 
@@ -215,6 +217,7 @@ public class ProjectServiceImpl implements ProjectService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<AdminProjectListResponse> getAdminProjects(String projectName, String developer, ProjectStatus status, Pageable pageable) {
         // 1. Quét danh sách dự án kèm phân trang và bộ lọc
         Page<Project> projects = projectRepository.findProjectsForAdmin(projectName, status, developer, pageable);
@@ -245,7 +248,6 @@ public class ProjectServiceImpl implements ProjectService {
             );
         });
     }
-
 
     private Project getProjectIfOwnedByUser(Integer projectId, String username) {
         // 1. Tìm dự án trong Database

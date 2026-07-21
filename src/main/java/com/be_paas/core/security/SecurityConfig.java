@@ -1,5 +1,6 @@
 package com.be_paas.core.security;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +18,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
-
 
 @Configuration
 @EnableWebSecurity
@@ -72,6 +72,9 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // SỬA GẮT: Cho phép luồng ASYNC của SSE đi qua không cần Token
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
+
                         .requestMatchers("/auth/**", "/github/callback").permitAll()
                         .anyRequest().authenticated()
                 )
