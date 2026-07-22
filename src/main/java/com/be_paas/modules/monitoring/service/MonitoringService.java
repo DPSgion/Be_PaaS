@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface MonitoringService {
     /**
-     * Lấy các thông số giám sát cơ bản của dự án (Container ID, Image Size)
+     * Lấy các thông số giám sát cơ bản của dự án (Container ID, Image Size, Domain)
      */
     ProjectMetricsResponse getProjectMetrics(Integer projectId, String username);
 

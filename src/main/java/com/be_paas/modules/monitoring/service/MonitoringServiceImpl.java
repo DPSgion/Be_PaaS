@@ -39,6 +39,15 @@ public class MonitoringServiceImpl implements MonitoringService {
         // 1. Lấy thông tin dự án và kiểm tra quyền sở hữu tuyệt đối
         Project project = validateAccessAndGetProject(projectId, username);
 
+        // ==========================================
+        // XỬ LÝ LẤY TÊN MIỀN (DOMAIN)
+        // ==========================================
+        String domainUrl = null;
+        if (project.getSubdomain() != null && !project.getSubdomain().isBlank()) {
+            // Ghép thẳng thành URL http:// (hoặc https:// nếu bạn đã cài SSL trên Cloudflare)
+            domainUrl = "https://" + project.getSubdomain() + ".bepaas.io.vn";
+        }
+
         // 2 & 3. Lấy Container ID và dung lượng Image cùng lúc từ lịch sử Deploy thành công gần nhất
         String containerId = null;
         Double imageSizeMb = 0.0;
@@ -56,8 +65,8 @@ public class MonitoringServiceImpl implements MonitoringService {
             }
         }
 
-        // 4. Đóng gói và trả về DTO
-        return new ProjectMetricsResponse(containerId, imageSizeMb);
+        // 4. Đóng gói và trả về DTO (Bổ sung domainUrl vào cuối)
+        return new ProjectMetricsResponse(containerId, imageSizeMb, domainUrl);
     }
 
     @Override

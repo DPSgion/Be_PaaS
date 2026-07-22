@@ -9,6 +9,7 @@ import com.be_paas.modules.deployment.repository.DeploymentRepository;
 import com.be_paas.modules.deployment.service.DockerService;
 import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
+import com.be_paas.modules.nginx.service.NginxService;
 import com.be_paas.modules.notification.entity.NotificationType;
 import com.be_paas.modules.notification.service.NotificationService;
 import com.be_paas.modules.project.dto.*;
@@ -53,6 +54,7 @@ public class ProjectServiceImpl implements ProjectService {
     private final DeploymentRepository deploymentRepository;
     private final DockerService dockerService;
     private final NotificationService notificationService;
+    private final NginxService nginxService;
 
     @Value("${app.bepaas.workspace-dir}")
     private String baseWorkspaceDir;
@@ -81,6 +83,21 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = new Project();
         project.setProjectName(normalizedProjectName);
         project.setBranch(request.branch());
+
+        // ==========================================
+        // CẤP PHÁT IMMUTABLE SUBDOMAIN
+        // ==========================================
+        // Chuẩn hóa tên và nhánh, chỉ giữ lại chữ cái và số (thay ký tự lạ bằng dấu gạch ngang)
+        String cleanName = normalizedProjectName.replaceAll("[^a-z0-9]", "-");
+        String cleanBranch = request.branch().replaceAll("[^a-z0-9]", "-");
+
+        // Tạo một chuỗi hash 5 ký tự ngẫu nhiên để đảm bảo tính duy nhất tuyệt đối
+        String shortHash = java.util.UUID.randomUUID().toString().substring(0, 5);
+
+        // Ghép lại thành subdomain chuẩn: vd: app-main-a1b2c
+        String generatedSubdomain = String.format("%s-%s-%s", cleanName, cleanBranch, shortHash);
+        project.setSubdomain(generatedSubdomain);
+        // ==========================================
 
         // Chuyển repoFullName thành URL chuẩn của GitHub và lưu thẳng vào cột duong_dan_git
         project.setGithubUrl("https://github.com/" + request.repoFullName() + ".git");
@@ -383,6 +400,14 @@ public class ProjectServiceImpl implements ProjectService {
         String containerName = containerPrefix + projectId;
         String imageName = imagePrefix + projectId;
         dockerService.cleanupContainerAndImage(containerName, imageName);
+
+        // ========================================================
+        // LỆNH CẮT MẠNG NGINX
+        // ========================================================
+        if (project.getSubdomain() != null) {
+            nginxService.unpublishProject(project.getSubdomain());
+        }
+        // ========================================================
 
         // ========================================================
         // 3. GỌI "MÁY HÚT BỤI" DỌN RÁC VẬT LÝ (Chạy ngầm Async)

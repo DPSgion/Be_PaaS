@@ -11,6 +11,7 @@ import com.be_paas.modules.deployment.entity.Deployment;
 import com.be_paas.modules.deployment.entity.DeploymentStatus;
 import com.be_paas.modules.deployment.repository.DeploymentRepository;
 import com.be_paas.modules.mail.service.MailService;
+import com.be_paas.modules.nginx.service.NginxService;
 import com.be_paas.modules.notification.entity.NotificationType;
 import com.be_paas.modules.notification.service.NotificationService;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
@@ -63,6 +64,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     private final AuditLogService auditLogService;
     private final MailService mailService;
     private final NotificationService notificationService;
+    private final NginxService nginxService;
 
     private final WorkspaceService workspaceService;
     private final PortManagerService portManagerService;
@@ -196,6 +198,14 @@ public class DeploymentServiceImpl implements DeploymentService {
             log.info("✅ [Project {}] Đã chạy thành công Container ID: {}", projectId, containerId);
             writeDeployLog(logFilePath, "✅ Container started successfully. Container ID: " + containerId);
 
+            // ========================================================
+            // LOGIC ĐỊNH TUYẾN MẠNG VÀO ĐÂY
+            // ========================================================
+            writeDeployLog(logFilePath, "🌐 Configuring Network routing (Nginx)...");
+            nginxService.publishProject(project.getSubdomain(), internalPort);
+            writeDeployLog(logFilePath, "✅ Network routing configured. Domain: " + project.getSubdomain() + ".bepaas.io.vn");
+            // ========================================================
+
             // 7. Hoàn tất (Cập nhật trạng thái Project hiện tại)
             updateProjectStatus(project, ProjectStatus.RUNNING, internalPort);
 
@@ -209,13 +219,17 @@ public class DeploymentServiceImpl implements DeploymentService {
             deployment.setEndTime(LocalDateTime.now());
             deploymentRepository.save(deployment);
 
-            writeDeployLog(logFilePath, "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY! Application is running on Port: " + internalPort);
+            // Tạo biến lưu trữ Link Public để dùng chung
+            String publicUrl = "https://" + project.getSubdomain() + ".bepaas.io.vn";
+
+            writeDeployLog(logFilePath, "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY! Application is live at: " + publicUrl);
             writeDeployLog(logFilePath, "[SYSTEM_CODE:DEPLOYMENT_SUCCESS]");
             // ========================================================
 
-            sendDeploymentNotification(project, "THÀNH CÔNG", "Ứng dụng của bạn đã được build và khởi chạy thành công. Hiện đang hoạt động tại Port nội bộ: " + internalPort + ": http://localhost:" + internalPort);
+            sendDeploymentNotification(project, "THÀNH CÔNG",
+                    "Ứng dụng của bạn đã được build và khởi chạy thành công. Truy cập ngay tại đường dẫn: " + publicUrl);
 
-            log.info("🎉 [Project {}] HOÀN TẤT DEPLOY! Ứng dụng đang chạy ở Port: {}", projectId, internalPort);
+            log.info("🎉 [Project {}] HOÀN TẤT DEPLOY! Ứng dụng đang chạy Public tại: {}", projectId, publicUrl);
             log.info("=====================================================");
 
         } catch (Exception e) {
