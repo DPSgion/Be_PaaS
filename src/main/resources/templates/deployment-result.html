@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Kết quả triển khai dự án Be-PaaS</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f8; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background-color: #2c3e50; color: #ffffff; padding: 20px; text-align: center; font-size: 20px; font-weight: bold; text-transform: uppercase; border-bottom: 4px solid #3498db; }
+        .content { padding: 30px; color: #333333; line-height: 1.6; font-size: 15px; }
+        .info-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .info-table th, .info-table td { padding: 12px; border: 1px solid #dee2e6; text-align: left; }
+        .info-table th { background-color: #f8f9fa; width: 35%; color: #495057; }
+        .status-badge { display: inline-block; padding: 5px 12px; color: white; border-radius: 4px; font-weight: bold; font-size: 14px; }
+        .message-box { background-color: #f8f9fa; border-left: 4px solid #6c757d; padding: 15px; margin-top: 20px; font-family: monospace; font-size: 14px; white-space: pre-wrap; color: #212529; }
+        .footer { background-color: #f1f1f1; color: #666666; text-align: center; padding: 15px; font-size: 12px; border-top: 1px solid #eeeeee; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">CI/CD Pipeline - Be-PaaS</div>
+    <div class="content">
+        <p>Chào <strong><span th:text="${developerName}">Developer</span></strong>,</p>
+        <p>Hệ thống Be-PaaS vừa hoàn tất tiến trình triển khai (Deploy) cho dự án của bạn. Dưới đây là thông tin chi tiết:</p>
+
+        <table class="info-table">
+            <tr>
+                <th>Tên dự án</th>
+                <td><strong th:text="${projectName}">Project Name</strong></td>
+            </tr>
+            <tr>
+                <th>Nhánh (Branch)</th>
+                <td><code th:text="${branch}">main</code></td>
+            </tr>
+            <tr>
+                <th>Trạng thái</th>
+                <td>
+                    <span class="status-badge" th:style="'background-color: ' + ${statusColor}" th:text="${status}">STATUS</span>
+                </td>
+            </tr>
+        </table>
+
+        <p style="margin-top: 25px; font-weight: bold;">Chi tiết hệ thống:</p>
+        <div class="message-box" th:text="${detailMessage}">
+            Thông điệp chi tiết sẽ hiển thị ở đây...
+        </div>
+
+        <p style="margin-top: 25px;">Vui lòng truy cập trang Dashboard của Be-PaaS để xem thêm chi tiết hoặc quản lý dự án của bạn.</p>
+    </div>
+    <div class="footer">
+        Đây là email thông báo tự động từ hệ thống Be-PaaS.<br>
+        Vui lòng không phản hồi trực tiếp vào email này.
+    </div>
+</div>
+</body>
+</html>

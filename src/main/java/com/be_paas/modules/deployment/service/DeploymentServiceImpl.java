@@ -10,11 +10,13 @@ import com.be_paas.modules.deployment.dto.WorkspaceResult;
 import com.be_paas.modules.deployment.entity.Deployment;
 import com.be_paas.modules.deployment.entity.DeploymentStatus;
 import com.be_paas.modules.deployment.repository.DeploymentRepository;
+import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.repository.EnvironmentVariableRepository;
 import com.be_paas.modules.project.repository.ProjectRepository;
+import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.repository.UserRepository;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +59,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     private final DeploymentRepository deploymentRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final MailService mailService;
 
     private final WorkspaceService workspaceService;
     private final PortManagerService portManagerService;
@@ -207,6 +210,8 @@ public class DeploymentServiceImpl implements DeploymentService {
             writeDeployLog(logFilePath, "[SYSTEM_CODE:DEPLOYMENT_SUCCESS]");
             // ========================================================
 
+            sendDeploymentNotification(project, "THÀNH CÔNG", "Ứng dụng của bạn đã được build và khởi chạy thành công. Hiện đang hoạt động tại Port nội bộ: " + internalPort + ": http://localhost:" + internalPort);
+
             log.info("🎉 [Project {}] HOÀN TẤT DEPLOY! Ứng dụng đang chạy ở Port: {}", projectId, internalPort);
             log.info("=====================================================");
 
@@ -222,6 +227,7 @@ public class DeploymentServiceImpl implements DeploymentService {
 
             if (project != null) {
                 updateProjectStatus(project, ProjectStatus.CRASHED, null);
+                sendDeploymentNotification(project, "THẤT BẠI", "Quá trình triển khai gặp sự cố: " + e.getMessage() + ". Vui lòng kiểm tra lại mã nguồn, cấu hình Dockerfile hoặc Terminal Log.");
             }
 
             if (deployment != null) {
@@ -672,5 +678,41 @@ public class DeploymentServiceImpl implements DeploymentService {
         }
 
         return project;
+    }
+
+    /**
+     * Hàm phụ trợ: Gửi email thông báo kết quả Deploy cho Developer
+     */
+    private void sendDeploymentNotification(Project project, String status, String detailMessage) {
+        User owner = project.getUser();
+        // Nếu User chưa cài email thì bỏ qua, không làm crash luồng
+        if (owner.getEmail() == null || owner.getEmail().isBlank()) {
+            return;
+        }
+
+        String developerName = owner.getFullName() != null && !owner.getFullName().isBlank()
+                ? owner.getFullName()
+                : owner.getUsername();
+
+        // Gắn màu sắc: Xanh cho thành công, Đỏ cho thất bại
+        String statusColor = status.equals("THÀNH CÔNG") ? "#28a745" : "#dc3545";
+
+        Map<String, Object> variables = Map.of(
+                "developerName", developerName,
+                "projectName", project.getProjectName(),
+                "branch", project.getBranch(),
+                "status", status,
+                "statusColor", statusColor,
+                "detailMessage", detailMessage
+        );
+
+        // Bắn mail (Luồng Async đã được cấu hình bên MailService nên rất mượt)
+        mailService.sendHtmlMail(
+                owner.getEmail(),
+                "[Be-PaaS] Kết quả triển khai dự án: " + project.getProjectName() + " - " + status,
+                "deployment-result",
+                variables
+        );
+        log.info("📧 Đã gửi email thông báo kết quả Deploy ({}) cho User: {}", status, owner.getUsername());
     }
 }
