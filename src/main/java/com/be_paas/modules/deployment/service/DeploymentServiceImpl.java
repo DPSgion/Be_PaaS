@@ -19,6 +19,7 @@ import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.repository.EnvironmentVariableRepository;
 import com.be_paas.modules.project.repository.ProjectRepository;
+import com.be_paas.modules.setting.service.SystemSettingService;
 import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.repository.UserRepository;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -51,11 +52,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class DeploymentServiceImpl implements DeploymentService {
-    @Value("${app.bepaas.docker.image-prefix}")
-    private String imagePrefix;
-
-    @Value("${app.bepaas.docker.container-prefix}")
-    private String containerPrefix;
+    private final SystemSettingService systemSettingService;
 
     private final ProjectRepository projectRepository;
     private final EnvironmentVariableRepository envVarRepository;
@@ -171,6 +168,10 @@ public class DeploymentServiceImpl implements DeploymentService {
             }
 
             // 6. Đóng gói & Chạy Docker
+            String baseDomain = systemSettingService.getValue("BASE_DOMAIN");
+            String imagePrefix = systemSettingService.getValue("DOCKER_IMAGE_PREFIX");
+            String containerPrefix = systemSettingService.getValue("DOCKER_CONTAINER_PREFIX");
+
             log.info("🐳 [Project {}] BƯỚC 4/4: Đang gửi lệnh cho Docker...", projectId);
             String imageName = imagePrefix + project.getId();
             String containerName = containerPrefix + project.getId();
@@ -220,7 +221,7 @@ public class DeploymentServiceImpl implements DeploymentService {
             deploymentRepository.save(deployment);
 
             // Tạo biến lưu trữ Link Public để dùng chung
-            String publicUrl = "https://" + project.getSubdomain() + ".bepaas.io.vn";
+            String publicUrl = "https://" + project.getSubdomain() + baseDomain;
 
             writeDeployLog(logFilePath, "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY! Application is live at: " + publicUrl);
             writeDeployLog(logFilePath, "[SYSTEM_CODE:DEPLOYMENT_SUCCESS]");

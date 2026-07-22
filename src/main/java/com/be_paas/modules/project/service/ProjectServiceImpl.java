@@ -18,6 +18,7 @@ import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.repository.EnvironmentVariableRepository;
 import com.be_paas.modules.project.repository.ProjectRepository;
+import com.be_paas.modules.setting.service.SystemSettingService;
 import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -55,21 +56,26 @@ public class ProjectServiceImpl implements ProjectService {
     private final DockerService dockerService;
     private final NotificationService notificationService;
     private final NginxService nginxService;
+    private final SystemSettingService systemSettingService;
 
     @Value("${app.bepaas.workspace-dir}")
     private String baseWorkspaceDir;
-
-    @Value("${app.bepaas.docker.image-prefix}")
-    private String imagePrefix;
-
-    @Value("${app.bepaas.docker.container-prefix}")
-    private String containerPrefix;
 
     @Override
     @Transactional
     public Project importProject(ProjectCreateRequest request, String username) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(401, "Không xác định được danh tính người dùng"));
+
+        String maxProjectsStr = systemSettingService.getValue("MAX_PROJECTS_PER_USER");
+        int maxProjects = maxProjectsStr.isEmpty() ? 5 : Integer.parseInt(maxProjectsStr); // Mặc định an toàn là 5
+
+        // Đếm số dự án đang hoạt động của User
+        long currentActiveProjects = projectRepository.countByUser_IdAndIsDeletedFalse(user.getId());
+
+        if (currentActiveProjects >= maxProjects) {
+            throw new BusinessException(403, "Vượt quá giới hạn tài nguyên! Bạn chỉ được phép tạo tối đa " + maxProjects + " dự án.");
+        }
 
         // Chuẩn hóa tên dự án: Chuyển thành chữ thường hoàn toàn
         String normalizedProjectName = request.projectName().toLowerCase();
@@ -397,6 +403,9 @@ public class ProjectServiceImpl implements ProjectService {
 
         // 2. MÃ HỢP LỆ -> TIẾN HÀNH "KHAI TỬ" HẠ TẦNG DOCKER
         log.info("Mã OTP hợp lệ. Đang tiến hành xóa toàn bộ dữ liệu Project ID: {}", projectId);
+        String imagePrefix = systemSettingService.getValue("DOCKER_IMAGE_PREFIX");
+        String containerPrefix = systemSettingService.getValue("DOCKER_CONTAINER_PREFIX");
+
         String containerName = containerPrefix + projectId;
         String imageName = imagePrefix + projectId;
         dockerService.cleanupContainerAndImage(containerName, imageName);

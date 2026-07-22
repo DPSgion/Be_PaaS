@@ -12,12 +12,17 @@ import com.be_paas.modules.monitoring.service.MonitoringService;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
 import com.be_paas.modules.project.repository.ProjectRepository;
+import com.be_paas.modules.setting.service.SystemSettingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.SchedulingConfigurer;
+import org.springframework.scheduling.config.ScheduledTaskRegistrar;
+import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -26,52 +31,80 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
-@Component
+@Configuration
+@EnableScheduling
 @RequiredArgsConstructor
-public class ResourceMonitorScheduler {
+public class ResourceMonitorScheduler implements SchedulingConfigurer { // SỬA GẮT: Đã thêm interface
 
     private final ProjectRepository projectRepository;
     private final DockerService dockerService;
     private final ResourceLogRepository resourceLogRepository;
     private final DeploymentRepository deploymentRepository;
     private final MonitoringService monitoringService;
+    private final SystemSettingService systemSettingService;
+
+    @Override
+    public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
+
+        // LUỒNG 1: QUÉT TÀI NGUYÊN (Tính bằng mili-giây)
+        taskRegistrar.addTriggerTask(
+                this::collectResourceStats,
+                triggerContext -> {
+                    String rateStr = systemSettingService.getValue("MONITOR_CRON_RATE_MS");
+                    long rate = rateStr.isEmpty() ? 30000 : Long.parseLong(rateStr);
+
+                    log.debug("Luồng giám sát đang chạy với chu kỳ {} ms", rate);
+
+                    // SỬA GẮT: Trả về trực tiếp kiểu Instant cho Spring Boot 3
+                    return Instant.now().plusMillis(rate);
+                }
+        );
+
+        // LUỒNG 2: DỌN RÁC NHẬT KÝ (Tính bằng Cron Expression)
+        taskRegistrar.addTriggerTask(
+                this::cleanupOldResourceLogs,
+                triggerContext -> {
+                    String cronExpr = systemSettingService.getValue("CLEANUP_LOG_CRON");
+                    if (cronExpr.isEmpty()) {
+                        cronExpr = "0 0 2 * * ?";
+                    }
+
+                    CronTrigger trigger = new CronTrigger(cronExpr);
+                    // Lệnh này mặc định trả về Instant trên Spring Boot 3
+                    return trigger.nextExecution(triggerContext);
+                }
+        );
+    }
 
     /**
      * Luồng 1: Thu thập dữ liệu
-     * Chạy lặp lại mỗi 30 giây (30000 milliseconds)
+     * SỬA GẮT: Đã xóa sổ @Scheduled tĩnh
      */
-    @Scheduled(fixedRate = 30000)
     public void collectResourceStats() {
-        // 1. Quét danh sách dự án (Nhanh, giải phóng connection ngay)
         List<Project> runningProjects = projectRepository.findByStatus(ProjectStatus.RUNNING);
 
         if (runningProjects.isEmpty()) {
             return;
         }
 
-        // 2. CHẠY SONG SONG (Parallel Stream) để không bị kẹt 5 giây/dự án
         List<ResourceLog> logsToSave = runningProjects.parallelStream().map(project -> {
             try {
-                // Lấy ID từ lịch sử Deploy (DB I/O nhỏ)
                 Optional<Deployment> latestDeploy = deploymentRepository
                         .findFirstByProjectIdAndStatusOrderByIdDesc(project.getId(), DeploymentStatus.SUCCESS);
 
                 if (latestDeploy.isEmpty() || latestDeploy.get().getContainerId() == null || latestDeploy.get().getContainerId().trim().isEmpty()) {
-                    return null; // Bỏ qua nếu không có container
+                    return null;
                 }
 
                 String containerId = latestDeploy.get().getContainerId();
 
-                // GỌI DOCKER (Mất 5 giây nhưng các dự án đang chạy song song nên không lo kẹt)
                 ContainerStatsDTO stats = dockerService.getContainerStats(containerId);
 
-                // Khởi tạo bản ghi
                 ResourceLog logRecord = new ResourceLog();
                 logRecord.setProject(project);
                 logRecord.setCpuUsage(stats.cpuUsage());
                 logRecord.setRamUsage(stats.ramUsage());
 
-                // Đóng gói và bơm vào ống SSE ngay lập tức cho Frontend thấy độ trễ thấp nhất
                 ResourceChartResponse liveData = new ResourceChartResponse(
                         LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")),
                         stats.cpuUsage(),
@@ -79,16 +112,14 @@ public class ResourceMonitorScheduler {
                 );
                 monitoringService.sendChartData(project.getId(), liveData);
 
-                return logRecord; // Trả về đối tượng để gom vào List
+                return logRecord;
 
             } catch (Exception e) {
                 log.error("⚠️ Không thể thu thập tài nguyên cho Project ID {}: {}", project.getId(), e.getMessage());
                 return null;
             }
-        }).filter(Objects::nonNull).collect(Collectors.toList()); // Lọc bỏ các dự án lỗi (null)
+        }).filter(Objects::nonNull).collect(Collectors.toList());
 
-        // 3. LƯU BATCH (Lưu 1 cục vào DB)
-        // Giải phóng áp lực hoàn toàn cho Hikari Connection Pool vì chỉ gọi DB đúng 1 lần
         if (!logsToSave.isEmpty()) {
             resourceLogRepository.saveAll(logsToSave);
         }
@@ -96,14 +127,12 @@ public class ResourceMonitorScheduler {
 
     /**
      * Luồng 2: Dọn dẹp dữ liệu cũ (Cuốn chiếu)
-     * Chạy vào lúc 02:00:00 sáng mỗi ngày
+     * SỬA GẮT: Đã xóa sổ @Scheduled tĩnh, chỉ giữ lại @Transactional
      */
-    @Scheduled(cron = "0 0 2 * * ?")
-    @Transactional // Bắt buộc có @Transactional khi thực thi câu lệnh @Modifying DELETE
+    @Transactional
     public void cleanupOldResourceLogs() {
         log.info("🧹 Bắt đầu tiến trình dọn dẹp nhật ký tài nguyên cũ...");
         try {
-            // Xác định mốc thời gian: Trừ đi 24 giờ so với hiện tại
             LocalDateTime threshold = LocalDateTime.now().minusHours(24);
 
             resourceLogRepository.deleteOlderThan(threshold);
