@@ -5,6 +5,8 @@ import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
 import com.be_paas.modules.auditlog.entity.ActionType;
 import com.be_paas.modules.auditlog.service.AuditLogService;
+import com.be_paas.modules.deployment.repository.DeploymentRepository;
+import com.be_paas.modules.deployment.service.DockerService;
 import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
 import com.be_paas.modules.project.dto.*;
@@ -17,14 +19,21 @@ import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -39,6 +48,17 @@ public class ProjectServiceImpl implements ProjectService {
     private final OtpService otpService;
     private final MailService mailService;
     private final AuditLogService auditLogService;
+    private final DeploymentRepository deploymentRepository;
+    private final DockerService dockerService;
+
+    @Value("${app.bepaas.workspace-dir}")
+    private String baseWorkspaceDir;
+
+    @Value("${app.bepaas.docker.image-prefix}")
+    private String imagePrefix;
+
+    @Value("${app.bepaas.docker.container-prefix}")
+    private String containerPrefix;
 
     @Override
     @Transactional
@@ -345,16 +365,22 @@ public class ProjectServiceImpl implements ProjectService {
             throw new BusinessException(400, "Mã xác nhận không chính xác hoặc đã hết hạn.");
         }
 
-        // 2. MÃ HỢP LỆ -> TIẾN HÀNH "KHAI TỬ" DỰ ÁN
+        // 2. MÃ HỢP LỆ -> TIẾN HÀNH "KHAI TỬ" HẠ TẦNG DOCKER
         log.info("Mã OTP hợp lệ. Đang tiến hành xóa toàn bộ dữ liệu Project ID: {}", projectId);
+        String containerName = containerPrefix + projectId;
+        String imageName = imagePrefix + projectId;
+        dockerService.cleanupContainerAndImage(containerName, imageName);
 
-        // TODO: (Bạn thêm code gọi DockerService để stop & remove container, xóa file log...)
+        // ========================================================
+        // 3. GỌI "MÁY HÚT BỤI" DỌN RÁC VẬT LÝ (Chạy ngầm Async)
+        // ========================================================
+        cleanupPhysicalFiles(projectId);
 
-        // 3. ĐỔI TÊN VÀ XÓA MỀM (Giải phóng Namespace)
-        String oldProjectName = project.getProjectName(); // Lưu lại tên cũ để ghi log cho trực quan
+        // ========================================================
+        // 4. ĐỔI TÊN VÀ XÓA MỀM (Giải phóng Namespace, Port, Domain)
+        // ========================================================
+        String oldProjectName = project.getProjectName();
         String shortHash = Long.toString(System.currentTimeMillis(), 36);
-
-        // Ghép chuỗi theo chuẩn: {tên}-{nhánh}-deleted-{username}-{hash}
         String deletedName = String.format("%s-%s-deleted-%s-%s",
                 project.getProjectName(),
                 project.getBranch(),
@@ -363,17 +389,22 @@ public class ProjectServiceImpl implements ProjectService {
 
         project.setProjectName(deletedName);
         project.setIsDeleted(true);
+
+        // Giải phóng Port và Subdomain về null để nhả tài nguyên cho người khác dùng
+        project.setInternalPort(null);
+        project.setSubdomain(null);
+
         projectRepository.save(project);
 
-        // 4. GHI AUDIT LOG
+        // 5. GHI AUDIT LOG
         auditLogService.logProjectAction(
                 project.getUser().getId(),
                 ActionType.DELETE_PROJECT,
                 projectId,
-                "User " + username + " đã xác nhận OTP và xóa dự án: " + oldProjectName + " (đổi tên thành: " + deletedName + ")"
+                "User " + username + " đã xóa dự án, thu hồi tài nguyên Port/Domain: " + oldProjectName + " (đổi thành: " + deletedName + ")"
         );
 
-        log.info("Đã xóa thành công. Project ID {} được đổi tên thành: {}", projectId, deletedName);
+        log.info("Đã xóa hoàn tất. Project ID {} được đổi tên thành: {}", projectId, deletedName);
     }
 
     private Project getProjectIfOwnedByUser(Integer projectId, String username) {
@@ -396,5 +427,56 @@ public class ProjectServiceImpl implements ProjectService {
         }
 
         return project;
+    }
+
+    /**
+     * Hàm dọn dẹp các tệp tin vật lý (Workspace & File log) chạy ngầm
+     */
+    private void cleanupPhysicalFiles(Integer projectId) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                // 1. Dọn dẹp thư mục Workspace (Clone code)
+                if (baseWorkspaceDir != null) {
+                    Path workspacePath = Paths.get(baseWorkspaceDir, "project_" + projectId);
+                    if (Files.exists(workspacePath)) {
+                        forceDeleteDirectory(workspacePath);
+                        log.info("🧹 Đã dọn sạch thư mục mã nguồn vật lý: {}", workspacePath);
+                    }
+                }
+
+                // 2. Dọn dẹp File Log Deployment
+                // Lấy tối đa 1000 bản ghi lịch sử gần nhất để dò tìm file log[cite: 14]
+                var deployments = deploymentRepository.findByProjectIdOrderByIdDesc(projectId, PageRequest.of(0, 1000));
+                for (var deploy : deployments) {
+                    if (deploy.getFilePath() != null) {
+                        Files.deleteIfExists(Paths.get(deploy.getFilePath()));
+                    }
+                }
+                log.info("🧹 Đã dọn dẹp toàn bộ file log Deployment của Project ID: {}", projectId);
+
+            } catch (Exception e) {
+                log.error("🔥 Lỗi dọn dẹp file vật lý cho Project ID {}: {}", projectId, e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Hàm đệ quy xóa thư mục ép buộc (Bypass lỗi AccessDenied của file Git)
+     */
+    private void forceDeleteDirectory(Path path) throws java.io.IOException {
+        Files.walkFileTree(path, new java.nio.file.SimpleFileVisitor<Path>() {
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws java.io.IOException {
+                file.toFile().setWritable(true); // Mở khóa Read-Only[cite: 17]
+                Files.delete(file);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult postVisitDirectory(Path dir, java.io.IOException exc) throws java.io.IOException {
+                Files.delete(dir);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
     }
 }
