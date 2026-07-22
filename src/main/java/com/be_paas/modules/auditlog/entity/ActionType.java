@@ -18,6 +18,9 @@ public enum ActionType {
     GRANT_ADMIN,
     REVOKE_ADMIN,
 
+    // Send Mail
+    SEND_MAIL,
+
     // ==================================== PROJECT ====================================
 
     CREATE_PROJECT,

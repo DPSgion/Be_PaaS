@@ -135,4 +135,18 @@ public class ProjectController {
 
         return ResponseEntity.ok("Dự án đã được xóa thành công khỏi hệ thống.");
     }
+
+    @PostMapping("/admin/{projectId}/send-mail")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
+    public ResponseEntity<String> sendNoticeMailToDeveloper(
+            @PathVariable Integer projectId,
+            @Valid @RequestBody AdminMailRequest request) {
+
+        // Lấy username của Admin đang đăng nhập
+        String adminUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        projectService.sendAdminNoticeMail(projectId, request, adminUsername);
+
+        return ResponseEntity.ok("Đã gửi email thông báo thành công tới chủ sở hữu dự án.");
+    }
 }

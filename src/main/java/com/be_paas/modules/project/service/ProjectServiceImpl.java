@@ -407,6 +407,51 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("Đã xóa hoàn tất. Project ID {} được đổi tên thành: {}", projectId, deletedName);
     }
 
+    @Override
+    @Transactional
+    public void sendAdminNoticeMail(Integer projectId, AdminMailRequest request, String adminUsername) {
+        // 1. Tìm dự án và xác định chủ sở hữu
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án với ID: " + projectId));
+
+        User owner = project.getUser();
+        if (owner.getEmail() == null || owner.getEmail().isBlank()) {
+            throw new BusinessException(400, "Không thể gửi thư: Developer này chưa cấu hình địa chỉ Email.");
+        }
+
+        // 2. Chuẩn bị dữ liệu cho Thymeleaf
+        String developerName = owner.getFullName() != null && !owner.getFullName().isBlank()
+                ? owner.getFullName()
+                : owner.getUsername();
+
+        // Lấy username
+        String developerUsername = owner.getUsername();
+
+        Map<String, Object> variables = Map.of(
+                "developerName", developerName,
+                "projectName", project.getProjectName(),
+                "adminMessage", request.content()
+        );
+
+        // 3. Thực thi gửi mail thông qua MailService đã có
+        mailService.sendHtmlMail(
+                owner.getEmail(),
+                "[Be-PaaS Admin] " + request.subject(),
+                "admin-notice", // Tên file template giao diện (tạo ở Bước 3)
+                variables
+        );
+
+        log.info("Admin [{}] đã gửi mail thông báo cho User [{}] về Project [{}]", adminUsername, owner.getUsername(), project.getProjectName());
+
+        // 4. Ghi Audit Log
+        auditLogService.logProjectAction(
+                userRepository.findByUsername(adminUsername).get().getId(), // Lấy ID admin
+                ActionType.SEND_MAIL,
+                projectId,
+                "Admin " + adminUsername + " đã gửi email đến " + developerUsername + " để thông báo với tiêu đề: " + request.subject()
+        );
+    }
+
     private Project getProjectIfOwnedByUser(Integer projectId, String username) {
         Project project = projectRepository.findByIdWithUser(projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dự án với mã: " + projectId));

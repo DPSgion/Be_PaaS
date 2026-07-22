@@ -27,4 +27,6 @@ public interface ProjectService {
 
     void requestDeleteProject(Integer projectId, String username);
     void confirmDeleteProject(Integer projectId, String username, String otpCode);
+
+    void sendAdminNoticeMail(Integer projectId, AdminMailRequest request, String adminUsername);
 }

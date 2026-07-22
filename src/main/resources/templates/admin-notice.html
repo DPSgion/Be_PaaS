@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Thông báo từ Quản trị viên Be-PaaS</title>
+  <style>
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f4f6f8;
+        margin: 0;
+        padding: 0;
+    }
+    .container {
+        max-width: 600px;
+        margin: 40px auto;
+        background-color: #ffffff;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+    .header {
+        background-color: #0056b3; /* Màu xanh hệ thống Admin */
+        color: #ffffff;
+        padding: 20px;
+        text-align: center;
+        font-size: 20px;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    .content {
+        padding: 30px;
+        color: #333333;
+        line-height: 1.6;
+        font-size: 15px;
+    }
+    .project-highlight {
+        background-color: #e9ecef;
+        padding: 10px 15px;
+        border-left: 4px solid #0056b3;
+        margin: 15px 0;
+        font-weight: 600;
+        color: #495057;
+    }
+    .message-box {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 20px;
+        margin: 20px 0;
+        font-size: 15px;
+        color: #212529;
+        white-space: pre-wrap; /* Giữ nguyên các khoảng trắng và dòng mới từ Form Admin */
+        font-style: italic;
+    }
+    .footer {
+        background-color: #f1f1f1;
+        color: #666666;
+        text-align: center;
+        padding: 15px;
+        font-size: 12px;
+        border-top: 1px solid #eeeeee;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    Thông Báo Hệ Thống Be-PaaS
+  </div>
+  <div class="content">
+    <p>Xin chào <strong th:text="${developerName}">Developer</strong>,</p>
+
+    <p>Bạn nhận được một thông báo quan trọng từ Ban Quản Trị Hệ Thống liên quan đến dự án của bạn:</p>
+
+    <div class="project-highlight">
+      Tên dự án: <span style="color: #0056b3;" th:text="${projectName}">Project Name</span>
+    </div>
+
+    <p><strong>Nội dung thông báo:</strong></p>
+
+    <!-- Khu vực hiển thị lời nhắn của Admin -->
+    <div class="message-box" th:text="${adminMessage}">
+      Nội dung lời nhắn của Admin sẽ hiển thị tại đây...
+    </div>
+
+    <p>Vui lòng kiểm tra lại hệ thống và thực hiện các điều chỉnh cần thiết (nếu có yêu cầu).</p>
+
+    <p>Trân trọng,<br><strong>Ban Quản Trị Be-PaaS</strong></p>
+  </div>
+  <div class="footer">
+    Đây là email tự động gửi từ hệ thống quản trị viên Be-PaaS.<br>
+    Vui lòng không phản hồi trực tiếp vào email này.
+  </div>
+</div>
+</body>
+</html>
