@@ -6,7 +6,7 @@ public enum ActionType {
 
     CREATE_USER,
     UPDATE_USER,
-    SOFT_DELETE_USER,
+    DELETE_USER,
     RESET_PASSWORD,
     CHANGE_PASSWORD,
 
@@ -20,10 +20,14 @@ public enum ActionType {
 
     // ==================================== PROJECT ====================================
 
-//    CREATE_PROJECT,
-//    DELETE_PROJECT,
-    FORCE_STOP
-//    UPDATE_ENV,
-//    MAP_DOMAIN
+    CREATE_PROJECT,
+    DELETE_PROJECT,
+    FORCE_STOP,
+    //    MAP_DOMAIN
+
+    // === ENV ===
+    CREATE_ENV,
+    UPDATE_ENV,
+    DELETE_ENV,
 
 }

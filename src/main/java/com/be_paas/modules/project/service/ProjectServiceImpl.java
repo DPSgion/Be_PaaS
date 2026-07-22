@@ -3,6 +3,8 @@ package com.be_paas.modules.project.service;
 import com.be_paas.core.config.AESUtil;
 import com.be_paas.core.exception.BusinessException;
 import com.be_paas.core.response.PageResponse;
+import com.be_paas.modules.auditlog.entity.ActionType;
+import com.be_paas.modules.auditlog.service.AuditLogService;
 import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
 import com.be_paas.modules.project.dto.*;
@@ -36,6 +38,7 @@ public class ProjectServiceImpl implements ProjectService {
     private final ResourceLogRepository resourceLogRepository;
     private final OtpService otpService;
     private final MailService mailService;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -74,7 +77,19 @@ public class ProjectServiceImpl implements ProjectService {
         // Trạng thái ban đầu
         project.setStatus(ProjectStatus.STOPPED);
 
-        return projectRepository.save(project);
+        // 1. Lưu xuống DB và hứng lại đối tượng để lấy ID
+        Project savedProject = projectRepository.save(project);
+
+        // 2. GHI AUDIT LOG
+        auditLogService.logProjectAction(
+                user.getId(),
+                ActionType.CREATE_PROJECT,
+                savedProject.getId(),
+                "User " + username + " đã khởi tạo dự án: " + normalizedProjectName + " (nhánh " + request.branch() + ")"
+        );
+
+        // 3. Trả về kết quả
+        return savedProject;
     }
 
 
@@ -111,6 +126,14 @@ public class ProjectServiceImpl implements ProjectService {
         env.setValue(aesUtil.encrypt(request.value())); // Mã hóa giá trị mới
 
         envVarRepository.save(env);
+
+        // GHI AUDIT LOG: LƯU Ý CHỈ GHI TÊN BIẾN (KEY)
+        auditLogService.logProjectAction(
+                project.getUser().getId(),
+                ActionType.CREATE_ENV,
+                projectId,
+                "User " + username + " đã THÊM biến môi trường: " + request.keyName()
+        );
     }
 
     @Transactional
@@ -125,11 +148,17 @@ public class ProjectServiceImpl implements ProjectService {
         env.setIsSecret(request.isSecret());
 
         // LOGIC CHUẨN GITHUB ACTIONS:
-        // Frontend gửi form lên, Backend không cần biết trước đó nó chứa gì,
-        // chỉ cần mã hóa luôn giá trị mới mà User vừa nhập và lưu đè vào DB.
         env.setValue(aesUtil.encrypt(request.value()));
 
         envVarRepository.save(env);
+
+        // GHI AUDIT LOG: LƯU Ý CHỈ GHI TÊN BIẾN (KEY)
+        auditLogService.logProjectAction(
+                project.getUser().getId(),
+                ActionType.UPDATE_ENV,
+                projectId,
+                "User " + username + " đã CẬP NHẬT biến môi trường: " + request.keyName()
+        );
     }
 
     @Transactional
@@ -140,7 +169,18 @@ public class ProjectServiceImpl implements ProjectService {
         EnvironmentVariable env = envVarRepository.findByIdAndProjectId(envId, projectId)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy biến môi trường hợp lệ trong dự án này"));
 
+        // Lấy tên biến ra trước khi xóa để ghi log
+        String deletedKey = env.getKeyName();
+
         envVarRepository.delete(env);
+
+        // GHI AUDIT LOG
+        auditLogService.logProjectAction(
+                project.getUser().getId(),
+                ActionType.DELETE_ENV,
+                projectId,
+                "User " + username + " đã XÓA biến môi trường: " + deletedKey
+        );
     }
 
     @Override
@@ -311,7 +351,7 @@ public class ProjectServiceImpl implements ProjectService {
         // TODO: (Bạn thêm code gọi DockerService để stop & remove container, xóa file log...)
 
         // 3. ĐỔI TÊN VÀ XÓA MỀM (Giải phóng Namespace)
-        // Lấy thời gian hiện tại ép sang cơ số 36 để tạo mã băm ngắn gọn, độc nhất
+        String oldProjectName = project.getProjectName(); // Lưu lại tên cũ để ghi log cho trực quan
         String shortHash = Long.toString(System.currentTimeMillis(), 36);
 
         // Ghép chuỗi theo chuẩn: {tên}-{nhánh}-deleted-{username}-{hash}
@@ -325,7 +365,15 @@ public class ProjectServiceImpl implements ProjectService {
         project.setIsDeleted(true);
         projectRepository.save(project);
 
-        log.info("Đã xoa thành công. Project ID {} được đổi tên thành: {}", projectId, deletedName);
+        // 4. GHI AUDIT LOG
+        auditLogService.logProjectAction(
+                project.getUser().getId(),
+                ActionType.DELETE_PROJECT,
+                projectId,
+                "User " + username + " đã xác nhận OTP và xóa dự án: " + oldProjectName + " (đổi tên thành: " + deletedName + ")"
+        );
+
+        log.info("Đã xóa thành công. Project ID {} được đổi tên thành: {}", projectId, deletedName);
     }
 
     private Project getProjectIfOwnedByUser(Integer projectId, String username) {
