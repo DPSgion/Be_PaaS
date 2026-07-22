@@ -13,9 +13,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -113,13 +115,32 @@ public class NotificationServiceImpl implements NotificationService{
     }
 
     @Override
-    public PageResponse<NotificationResponse> getHistory(String username, int page, int size) {
-        // ... (Giữ nguyên code cũ của hàm này)
+    public PageResponse<NotificationResponse> getHistory(
+            String username,
+            String search,
+            NotificationType type,
+            LocalDateTime startDate,
+            LocalDateTime endDate,
+            int page,
+            int size) {
+
         User currentUser = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng"));
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        Page<Notification> notiPage = notificationRepository.findByUserId(currentUser.getId(), pageable);
+
+        // Chuẩn hóa chuỗi tìm kiếm (xóa khoảng trắng 2 đầu, nếu rỗng thì ép về null)
+        String finalSearch = (search != null && !search.trim().isEmpty()) ? search.trim() : null;
+
+        // Gọi thẳng xuống Repository bằng hàm tìm kiếm động
+        Page<Notification> notiPage = notificationRepository.searchNotifications(
+                currentUser.getId(),
+                finalSearch,
+                type,
+                startDate,
+                endDate,
+                pageable
+        );
 
         Page<NotificationResponse> responsePage = notiPage.map(noti -> new NotificationResponse(
                 noti.getId(),
@@ -133,4 +154,31 @@ public class NotificationServiceImpl implements NotificationService{
 
         return PageResponse.from(responsePage);
     }
+
+    @Override
+    public void markAsRead(Integer notificationId, String username) {
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng"));
+
+        Notification notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy thông báo"));
+
+        // Bảo mật: Chỉ chủ sở hữu mới được đánh dấu đọc
+        if (!notification.getUserId().equals(currentUser.getId())) {
+            throw new BusinessException(403, "Bạn không có quyền thao tác trên thông báo này");
+        }
+
+        notification.setRead(true);
+        notificationRepository.save(notification);
+    }
+
+    @Override
+    @Transactional
+    public void markAllAsRead(String username) {
+        User currentUser = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng"));
+
+        notificationRepository.markAllAsReadByUserId(currentUser.getId());
+    }
+
 }
