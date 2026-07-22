@@ -35,8 +35,8 @@ public class JwtFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
-        // SỬA GẮT: Cập nhật hàm gọi trích xuất token đa luồng
-        String token = extractTokenFromCookie(request);
+        // SỬA GẮT: Đổi tên hàm và sử dụng bộ quét đa luồng
+        String token = extractToken(request);
 
         if (token != null && jwtService.isTokenValid(token)) {
             String username = jwtService.extractUsername(token);
@@ -61,7 +61,7 @@ public class JwtFilter extends OncePerRequestFilter {
                                     userDetails, null, userDetails.getAuthorities()
                             );
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authToken); // <-- Cấp thẻ thông hành
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
         }
@@ -69,14 +69,29 @@ public class JwtFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    // Trả file JwtFilter về nguyên bản, CHỈ ĐỌC COOKIE
-    private String extractTokenFromCookie(HttpServletRequest request) {
-        if (request.getCookies() == null) return null;
+    // ==========================================
+    // BỘ QUÉT TOKEN THÔNG MINH
+    // ==========================================
+    private String extractToken(HttpServletRequest request) {
+        // 1. Ưu tiên 1: Đọc từ Cookie (Luồng chuẩn của hệ thống Web)
+        if (request.getCookies() != null) {
+            String cookieToken = Arrays.stream(request.getCookies())
+                    .filter(cookie -> "phuong_paas".equals(cookie.getName()))
+                    .map(Cookie::getValue)
+                    .findFirst()
+                    .orElse(null);
 
-        return Arrays.stream(request.getCookies())
-                .filter(cookie -> "phuong_paas".equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .findFirst()
-                .orElse(null);
+            if (cookieToken != null && !cookieToken.isBlank()) {
+                return cookieToken;
+            }
+        }
+
+        // 2. Ưu tiên 2: Đọc từ URL Parameter (Dành riêng cho EventSource / SSE của Frontend)
+        String paramToken = request.getParameter("token");
+        if (paramToken != null && !paramToken.isBlank()) {
+            return paramToken;
+        }
+
+        return null;
     }
 }

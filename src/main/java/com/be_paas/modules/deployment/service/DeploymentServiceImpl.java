@@ -11,6 +11,8 @@ import com.be_paas.modules.deployment.entity.Deployment;
 import com.be_paas.modules.deployment.entity.DeploymentStatus;
 import com.be_paas.modules.deployment.repository.DeploymentRepository;
 import com.be_paas.modules.mail.service.MailService;
+import com.be_paas.modules.notification.entity.NotificationType;
+import com.be_paas.modules.notification.service.NotificationService;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
 import com.be_paas.modules.project.entity.Project;
 import com.be_paas.modules.project.entity.ProjectStatus;
@@ -60,6 +62,7 @@ public class DeploymentServiceImpl implements DeploymentService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final MailService mailService;
+    private final NotificationService notificationService;
 
     private final WorkspaceService workspaceService;
     private final PortManagerService portManagerService;
@@ -580,6 +583,19 @@ public class DeploymentServiceImpl implements DeploymentService {
                 "Admin " + adminUsername + " đã ép dừng (Force Kill) dự án " + project.getProjectName()
         );
 
+        // ==========================================
+        // CẢNH BÁO ĐỎ CHO DEVELOPER
+        // ==========================================
+        notificationService.sendNotification(
+                project.getUser().getId(),
+                project.getUser().getUsername(),
+                projectId,
+                "Cảnh báo: Dự án bị ép dừng",
+                "Dự án của bạn vừa bị Quản trị viên (Admin) ép dừng khẩn cấp. Vui lòng kiểm tra lại cấu hình hoặc liên hệ hỗ trợ.",
+                NotificationType.ERROR
+        );
+        // ==========================================
+
         // 4. Gọi Docker ở chốt chặn cuối
         // Nếu lệnh này thất bại (vd: mất kết nối Docker), Exception văng ra,
         // @Transactional sẽ lập tức ROLLBACK (hủy) toàn bộ dữ liệu ở bước 2 và 3.
@@ -714,5 +730,18 @@ public class DeploymentServiceImpl implements DeploymentService {
                 variables
         );
         log.info("📧 Đã gửi email thông báo kết quả Deploy ({}) cho User: {}", status, owner.getUsername());
+
+        // ==========================================
+        // BẮN THÔNG BÁO REAL-TIME NGAY SAU KHI GỬI MAIL
+        // ==========================================
+        notificationService.sendNotification(
+                owner.getId(),
+                owner.getUsername(),
+                project.getId(),
+                "Triển khai " + status,
+                detailMessage, // Lấy luôn thông điệp chi tiết truyền vào (kèm URL port hoặc lỗi)
+                status.equals("THÀNH CÔNG") ? NotificationType.SUCCESS : NotificationType.ERROR
+        );
+        // ==========================================
     }
 }

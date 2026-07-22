@@ -154,6 +154,19 @@ public class UserServiceImpl implements UserService {
 
         mailService.sendHtmlMail(createRequest.email(), "Chào mừng bạn gia nhập hệ thống Be PaaS", "welcome-user", emailVariables);
 
+        // ==========================================
+        // Lưu thông báo Welcome vào DB cho User mới
+        // ==========================================
+        notificationService.sendNotification(
+                savedUser.getId(),
+                savedUser.getUsername(),
+                null,
+                "Chào mừng đến với Be-PaaS!",
+                "Tài khoản của bạn đã được khởi tạo thành công. Hãy bắt đầu kết nối GitHub và triển khai dự án đầu tiên nhé!",
+                NotificationType.INFO
+        );
+        // ==========================================
+
         return userMapper.toResponse(savedUser);
     }
 
@@ -214,6 +227,19 @@ public class UserServiceImpl implements UserService {
                 "Admin " + currentUser.getUsername() + " chuyển trạng thái tài khoản " + targetUser.getUsername() + " từ: " + oldStatus + " thành " + newStatus.name()
         );
 
+        // ==========================================
+        // Bắn thông báo Real-time khi khóa/mở tài khoản
+        // ==========================================
+        notificationService.sendNotification(
+                savedUser.getId(),
+                savedUser.getUsername(),
+                null,
+                newStatus == UserStatus.BANNED ? "Tài khoản bị khóa" : "Tài khoản được mở khóa",
+                newStatus == UserStatus.BANNED
+                        ? "Tài khoản của bạn đã bị khóa bởi quản trị viên. Lý do: " + (reason != null ? reason : "Vi phạm chính sách.")
+                        : "Tài khoản của bạn đã được khôi phục trạng thái hoạt động.",
+                newStatus == UserStatus.BANNED ? NotificationType.ERROR : NotificationType.SUCCESS
+        );
 
         String subject;
         String templateName;

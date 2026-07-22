@@ -10,7 +10,7 @@ public interface AuditLogService {
             String term, String actionType, String fromDate, String toDate, int page, int size
     );
 
-    public void logUserAction(Integer actorId, ActionType action, Integer targetUserId, String description);
+    void logUserAction(Integer actorId, ActionType action, Integer targetUserId, String description);
 
     void logProjectAction(Integer actorId, ActionType action, Integer targetProjectId, String description);
 }

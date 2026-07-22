@@ -9,6 +9,8 @@ import com.be_paas.modules.deployment.repository.DeploymentRepository;
 import com.be_paas.modules.deployment.service.DockerService;
 import com.be_paas.modules.mail.service.MailService;
 import com.be_paas.modules.monitoring.repository.ResourceLogRepository;
+import com.be_paas.modules.notification.entity.NotificationType;
+import com.be_paas.modules.notification.service.NotificationService;
 import com.be_paas.modules.project.dto.*;
 import com.be_paas.modules.project.entity.EnvironmentVariable;
 import com.be_paas.modules.project.entity.Project;
@@ -50,6 +52,7 @@ public class ProjectServiceImpl implements ProjectService {
     private final AuditLogService auditLogService;
     private final DeploymentRepository deploymentRepository;
     private final DockerService dockerService;
+    private final NotificationService notificationService;
 
     @Value("${app.bepaas.workspace-dir}")
     private String baseWorkspaceDir;
@@ -106,6 +109,16 @@ public class ProjectServiceImpl implements ProjectService {
                 ActionType.CREATE_PROJECT,
                 savedProject.getId(),
                 "User " + username + " đã khởi tạo dự án: " + normalizedProjectName + " (nhánh " + request.branch() + ")"
+        );
+
+        // BẮN THÔNG BÁO REAL-TIME
+        notificationService.sendNotification(
+                user.getId(),
+                username,
+                savedProject.getId(),
+                "Khởi tạo dự án thành công",
+                "Dự án '" + normalizedProjectName + "' (nhánh " + request.branch() + ") đã sẵn sàng để triển khai.",
+                NotificationType.SUCCESS
         );
 
         // 3. Trả về kết quả
@@ -396,6 +409,16 @@ public class ProjectServiceImpl implements ProjectService {
 
         projectRepository.save(project);
 
+        // BẮN THÔNG BÁO REAL-TIME
+        notificationService.sendNotification(
+                project.getUser().getId(),
+                username,
+                projectId,
+                "Dự án đã bị xóa",
+                "Dự án '" + oldProjectName + "' đã được xóa và thu hồi toàn bộ tài nguyên hạ tầng.",
+                NotificationType.WARNING
+        );
+
         // 5. GHI AUDIT LOG
         auditLogService.logProjectAction(
                 project.getUser().getId(),
@@ -439,6 +462,16 @@ public class ProjectServiceImpl implements ProjectService {
                 "[Be-PaaS Admin] " + request.subject(),
                 "admin-notice", // Tên file template giao diện (tạo ở Bước 3)
                 variables
+        );
+
+        // BẮN THÔNG BÁO REAL-TIME CHO DEVELOPER TRÊN WEB
+        notificationService.sendNotification(
+                owner.getId(),
+                owner.getUsername(),
+                projectId,
+                "Thông báo từ Admin: " + request.subject(),
+                request.content(),
+                NotificationType.INFO
         );
 
         log.info("Admin [{}] đã gửi mail thông báo cho User [{}] về Project [{}]", adminUsername, owner.getUsername(), project.getProjectName());

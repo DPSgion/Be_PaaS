@@ -2,6 +2,8 @@ package com.be_paas.modules.github.service;
 
 import com.be_paas.core.exception.BusinessException;
 import com.be_paas.modules.github.dto.*;
+import com.be_paas.modules.notification.entity.NotificationType;
+import com.be_paas.modules.notification.service.NotificationService;
 import com.be_paas.modules.user.entity.User;
 import com.be_paas.modules.user.repository.UserRepository;
 import com.be_paas.modules.user.service.UserService;
@@ -33,11 +35,13 @@ public class GithubServiceImpl implements GithubService{
 
     private final UserService userService;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
-    public GithubServiceImpl(UserService userService, UserRepository userRepository){
+    public GithubServiceImpl(UserService userService, UserRepository userRepository, NotificationService notificationService){
 
         this.userService = userService;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
 
@@ -53,6 +57,22 @@ public class GithubServiceImpl implements GithubService{
 
         // Bước 3: Đẩy thẳng currentUsername xuống UserService
         userService.linkGithubAccount(currentUsername, githubUser.login(), accessToken);
+
+        // ==========================================
+        // SỬA GẮT: Lấy ID của User hiện tại và bắn thông báo Real-time
+        // ==========================================
+        User user = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new BusinessException(404, "Không tìm thấy dữ liệu người dùng"));
+
+        notificationService.sendNotification(
+                user.getId(),
+                currentUsername,
+                null, // Liên kết tài khoản thì không gắn với Project ID nào cả
+                "Liên kết GitHub thành công",
+                "Tài khoản của bạn đã được kết nối với hồ sơ GitHub: " + githubUser.login(),
+                NotificationType.SUCCESS
+        );
+        // ==========================================
 
         return new GithubIntegrationResult(
                 githubUser.login(),

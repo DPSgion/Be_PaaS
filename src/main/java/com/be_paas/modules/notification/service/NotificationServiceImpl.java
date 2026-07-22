@@ -16,8 +16,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
 public class NotificationServiceImpl implements NotificationService{
@@ -30,25 +32,38 @@ public class NotificationServiceImpl implements NotificationService{
         this.userRepository = userRepository;
     }
 
-    private final Map<String, SseEmitter> userEmitters = new ConcurrentHashMap<>();
+    private final Map<String, List<SseEmitter>> userEmitters = new ConcurrentHashMap<>();
 
     @Override
     public SseEmitter subscribe(String username) {
-        // Mở kết nối sống trong 30 phút. User online web liên tục thì luồng này giữ nguyên.
-        SseEmitter emitter = new SseEmitter(1800000L);
+        SseEmitter emitter = new SseEmitter(1800000L); // 30 phút
 
-        userEmitters.put(username, emitter);
+        // Khởi tạo List nếu User này chưa có, sau đó nhét Emitter của Tab hiện tại vào
+        userEmitters.computeIfAbsent(username, k -> new CopyOnWriteArrayList<>()).add(emitter);
 
-        // Dọn dẹp bộ nhớ nếu kết nối đứt
-        emitter.onCompletion(() -> userEmitters.remove(username));
-        emitter.onTimeout(() -> userEmitters.remove(username));
-        emitter.onError((e) -> userEmitters.remove(username));
+        // Lập trình hành động Dọn rác
+        Runnable onDisconnect = () -> {
+            List<SseEmitter> emitters = userEmitters.get(username);
+            if (emitters != null) {
+                // CHỈ XÓA ĐÚNG CÁI EMITTER CỦA TAB VỪA ĐÓNG
+                emitters.remove(emitter);
+                // Nếu User đóng hết toàn bộ các tab thì dọn luôn cái key cho nhẹ RAM
+                if (emitters.isEmpty()) {
+                    userEmitters.remove(username);
+                }
+            }
+        };
 
-        // Bắn tín hiệu đầu tiên báo connect thành công (tránh lỗi timeout ban đầu của SSE)
+        // Gắn cờ dọn rác
+        emitter.onCompletion(onDisconnect);
+        emitter.onTimeout(onDisconnect);
+        emitter.onError((e) -> onDisconnect.run());
+
+        // Bắn tín hiệu mồi
         try {
             emitter.send(SseEmitter.event().name("INIT").data("Connected Realtime SSE for " + username));
         } catch (IOException e) {
-            userEmitters.remove(username);
+            onDisconnect.run();
         }
 
         return emitter;
@@ -56,7 +71,7 @@ public class NotificationServiceImpl implements NotificationService{
 
     @Override
     public void sendNotification(Integer userId, String username, Integer projectId, String title, String message, NotificationType type) {
-        // 1. Lưu thông báo xuống Database để giữ lịch sử
+        // 1. Lưu thông báo xuống Database
         Notification notification = Notification.builder()
                 .userId(userId)
                 .projectId(projectId)
@@ -67,7 +82,7 @@ public class NotificationServiceImpl implements NotificationService{
 
         Notification savedNotif = notificationRepository.save(notification);
 
-        // 2. MAPPING SANG DTO ĐỂ ÉP KIỂU JSON TRẢ VỀ
+        // 2. Map sang DTO
         NotificationResponse responsePayload = new NotificationResponse(
                 savedNotif.getId(),
                 savedNotif.getProjectId(),
@@ -78,31 +93,34 @@ public class NotificationServiceImpl implements NotificationService{
                 savedNotif.getCreatedAt()
         );
 
-        // 3. Lấy ống dẫn của User này ra và bắn DTO đi
-        SseEmitter emitter = userEmitters.get(username);
-        if (emitter != null) {
-            try {
-                // Đẩy responsePayload thay vì savedNotif
-                emitter.send(SseEmitter.event()
-                        .name("NEW_NOTIFICATION")
-                        .data(responsePayload));
-            } catch (IOException e) {
-                userEmitters.remove(username);
+        // ==========================================
+        // 3. SỬA GẮT: BẮN THÔNG BÁO CHO TẤT CẢ CÁC TAB ĐANG MỞ CỦA USER
+        // ==========================================
+        List<SseEmitter> emitters = userEmitters.get(username);
+        if (emitters != null) {
+            // Dùng vòng lặp for (không dùng stream để dễ catch Exception)
+            for (SseEmitter emitter : emitters) {
+                try {
+                    emitter.send(SseEmitter.event()
+                            .name("NEW_NOTIFICATION")
+                            .data(responsePayload));
+                } catch (IOException e) {
+                    // Nếu tab nào bị lỗi mạng, chỉ cắt ống dẫn của tab đó
+                    emitters.remove(emitter);
+                }
             }
         }
     }
 
     @Override
     public PageResponse<NotificationResponse> getHistory(String username, int page, int size) {
+        // ... (Giữ nguyên code cũ của hàm này)
         User currentUser = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BusinessException(404, "Không tìm thấy người dùng"));
 
-        // Sort theo thời gian tạo giảm dần - mới nhất lên đầu
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-
         Page<Notification> notiPage = notificationRepository.findByUserId(currentUser.getId(), pageable);
 
-        // Map từ Entity sang DTO
         Page<NotificationResponse> responsePage = notiPage.map(noti -> new NotificationResponse(
                 noti.getId(),
                 noti.getProjectId(),
