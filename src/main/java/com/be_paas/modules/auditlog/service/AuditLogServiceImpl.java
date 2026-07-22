@@ -5,6 +5,7 @@ import com.be_paas.modules.auditlog.dto.AuditLogResponse;
 import com.be_paas.modules.auditlog.entity.ActionType;
 import com.be_paas.modules.auditlog.entity.AuditLog;
 import com.be_paas.modules.auditlog.repository.AuditLogRepository;
+import com.be_paas.modules.project.repository.ProjectRepository; // BỔ SUNG IMPORT
 import com.be_paas.modules.user.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -23,11 +24,13 @@ public class AuditLogServiceImpl implements AuditLogService{
 
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
+    private final ProjectRepository projectRepository; // SỬA GẮT 1: Tiêm ProjectRepository
 
-    public AuditLogServiceImpl(AuditLogRepository auditLogRepository, UserRepository userRepository) {
-
+    // Cập nhật lại Constructor để Spring Boot tự động Inject
+    public AuditLogServiceImpl(AuditLogRepository auditLogRepository, UserRepository userRepository, ProjectRepository projectRepository) {
         this.auditLogRepository = auditLogRepository;
         this.userRepository = userRepository;
+        this.projectRepository = projectRepository;
     }
 
     @Override
@@ -80,14 +83,13 @@ public class AuditLogServiceImpl implements AuditLogService{
 
         // 2. Xác định Target và lấy tên cụ thể
         String target = "";
-//        if (log.getTargetProject() != null) {
-//            // Giả định Entity Project của bạn có hàm getName(), hãy đổi lại cho đúng nếu bạn dùng tên khác
-//            target = projectRepository.findById(log.getTargetProject())
-//                    .map(project -> project.getName())
-//                    .orElse("Project đã xóa (ID: " + log.getTargetProject() + ")");
-//
-//        } else
-        if (log.getTargetUser() != null) {
+        if (log.getTargetProject() != null) {
+            // SỬA GẮT 2: Mở comment và dùng getProjectName()
+            target = projectRepository.findById(log.getTargetProject())
+                    .map(project -> "Project: " + project.getProjectName())
+                    .orElse("Project đã xóa (ID: " + log.getTargetProject() + ")");
+
+        } else if (log.getTargetUser() != null) {
             target = userRepository.findById(log.getTargetUser())
                     .map(user -> "User: " + user.getUsername())
                     .orElse("User đã xóa (ID: " + log.getTargetUser() + ")");
@@ -119,7 +121,7 @@ public class AuditLogServiceImpl implements AuditLogService{
         AuditLog log = AuditLog.builder()
                 .implementerId(actorId)
                 .actionType(action)
-                .targetProject(targetProjectId) // Lưu ID dự án bị tác động
+                .targetProject(targetProjectId)
                 .describe(description)
                 .build();
         auditLogRepository.save(log);
